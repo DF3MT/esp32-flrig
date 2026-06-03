@@ -1,0 +1,51 @@
+{
+  "vendor": "ICOM",
+  "icom_address": 148,
+  "cat_baud": 38400,
+  "wifi_ssid": "",
+  "wifi_pass": "",
+  "remote_host": "",
+  "remote_port": 4532,
+  "pots": [
+    {
+      "action": "FREQ_COARSE",
+      "min": -100000,
+      "max": 100000,
+      "step": 10000,
+      "invert": false,
+      "custom_cmd": ""
+    },
+    {
+      "action": "FREQ_FINE",
+      "min": -5000,
+      "max": 5000,
+      "step": 10,
+      "invert": false,
+      "custom_cmd": ""
+    },
+    {
+      "action": "AF_GAIN",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "invert": false,
+      "custom_cmd": ""
+    },
+    {
+      "action": "RF_POWER",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "invert": false,
+      "custom_cmd": ""
+    },
+    {
+      "action": "SQUELCH",
+      "min": 0.0,
+      "max": 1.0,
+      "step": 0.01,
+      "invert": false,
+      "custom_cmd": ""
+    }
+  ]
+}
