@@ -349,9 +349,7 @@ def main() -> int:
         (ROOT / "docs/RADIOS.md", "de"),
         (ROOT / "docs/GUIDE_DE.md", "de"),
         (ROOT / "hardware/esp32-flrig-shield/README.md", "both"),
-        (ROOT / "hardware/esp32-flrig-shield/docs/ASSEMBLY.md", "de"),
         (ROOT / "hardware/esp32-flrig-shield/docs/CABLE_ASSEMBLY.md", "de"),
-        (ROOT / "hardware/esp32-flrig-shield/docs/JLCPCB_ORDER.md", "de"),
         (ROOT / "hardware/esp32-flrig-shield/docs/RJ45_PINOUT.md", "de"),
         (ROOT / "hardware/esp32-flrig-shield/docs/SCHEMATIC.md", "de"),
     ]

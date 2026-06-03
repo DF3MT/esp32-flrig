@@ -32,8 +32,8 @@ Firmware schaltet **logisch** ([rigctld](https://hamlib.sourceforge.net/html/rig
 
 ### Dokumentation Hardware
 
-- [SCHEMATIC.md](../hardware/esp32-flrig-shield/docs/SCHEMATIC.md) (Rev C Netze)
-- [ASSEMBLY.md](../hardware/esp32-flrig-shield/docs/ASSEMBLY.md) (Prüfpunkte)
+- [SCHEMATIC.md](../hardware/esp32-flrig-shield/docs/SCHEMATIC.md) (Netze / Blöcke)
+- [CABLE_ASSEMBLY.md](../hardware/esp32-flrig-shield/docs/CABLE_ASSEMBLY.md) (Verkabelung)
 
 <a id="english"></a>
 

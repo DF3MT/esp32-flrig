@@ -1,6 +1,6 @@
 # Schaltplan — [ESP32](https://de.wikipedia.org/wiki/ESP32)-FLRIG Interface Shield (Rev C)
 
-Logischer Schaltplan ([KiCad](https://de.wikipedia.org/wiki/KiCad): [`../kicad/esp32-flrig-shield.kicad_pcb`](../kicad/esp32-flrig-shield.kicad_pcb)).
+Logischer Schaltplan (Konzept — keine KiCad-/Gerber-Dateien im Repository).
 
 ![Blockdiagramm](../assets/block_diagram.svg)
 
@@ -87,4 +87,4 @@ J7 → J3 [GPIO](https://de.wikipedia.org/wiki/General_Purpose_Input/Output) (Ta
 
 ## [BOM](https://de.wikipedia.org/wiki/St%C3%BCckliste) Rev C
 
-Siehe `fabrication/BOM_JLCPCB.csv` — **U1 [ISO7741](https://www.ti.com/product/ISO7741)**, **U6/U7 [ADuM4160](https://www.analog.com/en/products/adum4160.html)**, **U8/U9 [B0505S](https://en.wikipedia.org/wiki/DC-to-DC_converter)**, **T1/T2 [Audio-Trafo](https://de.wikipedia.org/wiki/Transformator)**.
+Kernbauteile: **U1 [ISO7741](https://www.ti.com/product/ISO7741)**, **U6/U7 [ADuM4160](https://www.analog.com/en/products/adum4160.html)**, **U8/U9 [B0505S](https://en.wikipedia.org/wiki/DC-to-DC_converter)**, **T1/T2 [Audio-Trafo](https://de.wikipedia.org/wiki/Transformator)**, **U5 [USB2422](https://www.microchip.com/en-us/product/USB2422)**, **U2 AMS1117**, **U3/U4** [I2S](https://de.wikipedia.org/wiki/I%C2%B2S)-Module.

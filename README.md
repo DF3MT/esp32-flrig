@@ -39,17 +39,12 @@
   <img src="https://img.shields.io/badge/Isolation-per%20radio-red?style=flat-square" alt="Isolation">
   <img src="https://img.shields.io/badge/Audio-48%20kHz-orange?style=flat-square" alt="Audio">
   <img src="https://img.shields.io/badge/Radios-3%20%2B%20Rotor-purple?style=flat-square" alt="3 radios">
-  <img src="https://img.shields.io/badge/PCB-Rev%20C-00979D?style=flat-square" alt="PCB Rev C">
+  <img src="https://img.shields.io/badge/Shield-docs-00979D?style=flat-square" alt="Shield docs">
 </p>
 
 <p align="center">
   <img src="hardware/esp32-flrig-shield/assets/block_diagram.svg" width="720" alt="System overview">
 </p>
-
-<p align="center">
-  <img src="docs/assets/pcb-preview.jpg" width="720" alt="PCB Rev C preview">
-</p>
-<p align="center"><sub>DE: Gerber-Vorschau Rev C (Kupfer, Lötstop, Paste, Silk, Bohrungen) · EN: Gerber preview Rev C</sub></p>
 
 ---
 
@@ -137,20 +132,14 @@ Zwei **Taster** (Azimut) und zwei **[Open-Collector](https://de.wikipedia.org/wi
 
 `OUTPUT_OPEN_DRAIN`: **LOW** = Relais ein. Port **4535** (nicht 4533 — Audio-[UDP](https://de.wikipedia.org/wiki/User_Datagram_Protocol)).
 
-### Interface-Platine Rev C
+### Interface-Shield (Dokumentation)
 
 | Dokument | Inhalt |
 |----------|--------|
 | [Shield README](hardware/esp32-flrig-shield/README.md#deutsch) | Übersicht (DE/EN) |
-| [Bauanleitung](hardware/esp32-flrig-shield/docs/ASSEMBLY.md) | Löten |
-| [Schaltplan](hardware/esp32-flrig-shield/docs/SCHEMATIC.md) | Rev C, Isolation |
-| [JLCPCB](hardware/esp32-flrig-shield/docs/JLCPCB_ORDER.md) | Bestellung |
-
-**[Gerber](https://en.wikipedia.org/wiki/Gerber_format):** [esp32-flrig-shield-jlc.zip](hardware/esp32-flrig-shield/fabrication/esp32-flrig-shield-jlc.zip) · **Vorschau:** [pcb-preview.jpg](docs/assets/pcb-preview.jpg)
-
-```bash
-cd hardware/esp32-flrig-shield/kicad && python3 generate_gerbers.py --zip --preview
-```
+| [Schaltplan](hardware/esp32-flrig-shield/docs/SCHEMATIC.md) | Logik, Isolation |
+| [Kabel](hardware/esp32-flrig-shield/docs/CABLE_ASSEMBLY.md) | RJ45 / Funk |
+| [RJ45-Pinout](hardware/esp32-flrig-shield/docs/RJ45_PINOUT.md) | Steckerbelegung |
 
 ### [FT8](https://de.wikipedia.org/wiki/FT8_(Amateurfunk)) / [WSJT-X](https://physics.princeton.edu/pulsar/k1jt/wsjtx.html)
 
@@ -269,20 +258,14 @@ Two **buttons** (azimuth) and two **[open-collector](https://en.wikipedia.org/wi
 
 `OUTPUT_OPEN_DRAIN`: **LOW** = relay on. Port **4535** (not 4533 — audio [UDP](https://en.wikipedia.org/wiki/User_Datagram_Protocol)).
 
-### Interface [PCB](https://en.wikipedia.org/wiki/Printed_circuit_board) Rev C
+### Interface shield (documentation)
 
 | Document | Content |
 |----------|---------|
 | [Shield README](hardware/esp32-flrig-shield/README.md#english) | Overview (DE/EN) |
-| [Assembly](hardware/esp32-flrig-shield/docs/ASSEMBLY.md) | Soldering |
-| [Schematic](hardware/esp32-flrig-shield/docs/SCHEMATIC.md) | Rev C, isolation |
-| [JLCPCB order](hardware/esp32-flrig-shield/docs/JLCPCB_ORDER.md) | Ordering |
-
-**Gerbers:** [esp32-flrig-shield-jlc.zip](hardware/esp32-flrig-shield/fabrication/esp32-flrig-shield-jlc.zip) · **Preview:** [pcb-preview.jpg](docs/assets/pcb-preview.jpg)
-
-```bash
-cd hardware/esp32-flrig-shield/kicad && python3 generate_gerbers.py --zip --preview
-```
+| [Schematic](hardware/esp32-flrig-shield/docs/SCHEMATIC.md) | Logic, isolation |
+| [Cables](hardware/esp32-flrig-shield/docs/CABLE_ASSEMBLY.md) | RJ45 / radio |
+| [RJ45 pinout](hardware/esp32-flrig-shield/docs/RJ45_PINOUT.md) | Connector pins |
 
 ### [FT8](https://en.wikipedia.org/wiki/FT8_(digital_mode)) / [WSJT-X](https://physics.princeton.edu/pulsar/k1jt/wsjtx.html)
 
@@ -313,10 +296,10 @@ python3 scripts/ft8_setup.py --config ~/.config/esp32-flrig/ft8.json --test-cat 
 
 ```
 esp32-flrig/
-├── docs/              Guides, radio list, isolation, previews
+├── docs/              Guides, radio list, isolation
 ├── hardware/esp32-flrig-shield/
-│   ├── kicad/         KiCad Rev C → JLCPCB + preview render
-│   └── fabrication/   BOM, CPL, Gerber ZIP
+│   ├── docs/          Schematic, cables, RJ45
+│   └── assets/        Block diagram
 ├── scripts/           FT8 setup (Linux / Windows)
 ├── src/               Firmware
 └── flasher/           Browser flasher
