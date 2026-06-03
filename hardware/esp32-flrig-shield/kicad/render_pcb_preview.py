@@ -2,8 +2,9 @@
 """
 Render PCB preview image (SVG + JPG) from Gerber export or KiCad PCB.
 
-Uses gerbonara (same stack as generate_gerbers.py) with to_pretty_svg() so all
-layers appear: top copper, mask, paste, silk, bottom copper, outline, drills.
+Uses gerbonara ``to_svg()`` with solid layer colors (no SVG filter effects).
+``to_pretty_svg()`` looks nicer in Inkscape but renders blank in CairoSVG/browsers
+because filter stacks are not supported for rasterization.
 
 Usage:
   python3 render_pcb_preview.py
@@ -17,6 +18,7 @@ import sys
 from pathlib import Path
 
 from gerbonara.layers import LayerStack
+from gerbonara.utils import MM, Tag, setup_svg
 
 ROOT = Path(__file__).resolve().parent
 FAB = ROOT.parent / "fabrication"
@@ -24,6 +26,29 @@ GERBERS = FAB / "gerbers"
 DEFAULT_JPG = FAB / "esp32-flrig-shield-preview.jpg"
 DEFAULT_SVG = FAB / "esp32-flrig-shield-preview.svg"
 DOCS_JPG = ROOT.parent.parent.parent / "docs" / "assets" / "pcb-preview.jpg"
+
+# Bottom → top draw order (first = back)
+DRAW_ORDER: list[tuple[str, str]] = [
+    ("top", "copper"),
+    ("top", "mask"),
+    ("top", "paste"),
+    ("top", "silk"),
+    ("bottom", "copper"),
+    ("mechanical", "outline"),
+]
+
+# Solid fills — must use explicit keys (defaultdict.get skips missing keys in gerbonara)
+PREVIEW_COLORS: dict[str, str] = {
+    "top copper": "#C87533",
+    "top mask": "#1A5C1A",
+    "top paste": "#888888",
+    "top silk": "#E8E8E8",
+    "bottom copper": "#C87533",
+    "mechanical outline": "#D4A017",
+    "drill pth": "#252525",
+    "drill npth": "#505050",
+    "drill unknown": "#303030",
+}
 
 
 def load_stack(from_gerbers: Path | None) -> LayerStack:
@@ -35,13 +60,77 @@ def load_stack(from_gerbers: Path | None) -> LayerStack:
     return build_stack()
 
 
-def write_svg(stack: LayerStack, path: Path) -> None:
-    pretty = stack.to_pretty_svg()
+def write_flat_svg(stack: LayerStack, path: Path, margin: float = 3) -> None:
+    """Filter-free SVG suitable for browsers, CairoSVG, and README embeds."""
+    bounds = stack.bounding_box(MM, default=((0, 0), (0, 0)))
+    stroke_attrs = {"stroke_linejoin": "round", "stroke_linecap": "round"}
+    layer_transform = f"translate(0 {bounds[0][1] + bounds[1][1]}) scale(1 -1)"
+
+    tags: list[Tag] = []
+    for side, use in DRAW_ORDER:
+        key = (side, use)
+        if key not in stack.graphic_layers:
+            continue
+        color = PREVIEW_COLORS.get(f"{side} {use}")
+        if not color:
+            continue
+        layer = stack.graphic_layers[key]
+        tags.append(
+            Tag(
+                "g",
+                list(layer.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
+                id=f"l-{side}-{use}",
+                transform=layer_transform,
+                **stroke_attrs,
+            )
+        )
+
+    if stack.drill_pth and (color := PREVIEW_COLORS.get("drill pth")):
+        tags.append(
+            Tag(
+                "g",
+                list(stack.drill_pth.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
+                id="l-drill-pth",
+                transform=layer_transform,
+                **stroke_attrs,
+            )
+        )
+    if stack.drill_npth and (color := PREVIEW_COLORS.get("drill npth")):
+        tags.append(
+            Tag(
+                "g",
+                list(stack.drill_npth.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
+                id="l-drill-npth",
+                transform=layer_transform,
+                **stroke_attrs,
+            )
+        )
+    for i, layer in enumerate(stack._drill_layers):
+        if color := PREVIEW_COLORS.get("drill unknown"):
+            tags.append(
+                Tag(
+                    "g",
+                    list(layer.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
+                    id=f"l-drill-{i}",
+                    transform=layer_transform,
+                    **stroke_attrs,
+                )
+            )
+
+    svg = setup_svg(
+        tags,
+        bounds,
+        margin=margin,
+        arg_unit=MM,
+        svg_unit=MM,
+        tag=Tag,
+        pagecolor="#f4f4f4",
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    if hasattr(pretty, "write_to"):
-        pretty.write_to(path)
+    if hasattr(svg, "write_to"):
+        svg.write_to(path)
     else:
-        path.write_text(str(pretty))
+        path.write_text(str(svg))
 
 
 def svg_to_jpg(svg_path: Path, jpg_path: Path, width: int, quality: int) -> None:
@@ -69,6 +158,7 @@ def main() -> None:
     ap.add_argument("--copy-docs", action="store_true", help="Also write docs/assets/pcb-preview.jpg")
     ap.add_argument("--width", type=int, default=3200, help="Output image width in pixels")
     ap.add_argument("--quality", type=int, default=92, help="JPEG quality 1-100")
+    ap.add_argument("--margin", type=float, default=3, help="Margin around board (mm)")
     args = ap.parse_args()
 
     gerber_dir = args.from_gerbers
@@ -78,7 +168,7 @@ def main() -> None:
     stack = load_stack(gerber_dir)
     stack.merge_drill_layers()
 
-    write_svg(stack, args.svg)
+    write_flat_svg(stack, args.svg, margin=args.margin)
     svg_to_jpg(args.svg, args.jpg, args.width, args.quality)
 
     if args.copy_docs:

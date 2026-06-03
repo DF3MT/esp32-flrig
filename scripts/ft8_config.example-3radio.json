@@ -1,0 +1,34 @@
+{
+  "esp_host": "192.168.4.1",
+  "notes": "3 unabhängige PC-Instanzen — je Funk eigenes rigctld-Port-Paar + Audio-UDP + virtuelles Kabel. EN: 3 independent PC apps, one per radio.",
+  "radios": [
+    {
+      "label": "A",
+      "rigctld_port": 4532,
+      "audio_port_out": 4533,
+      "audio_port_in": 4534,
+      "radio_model": "IC-7300",
+      "wsjtx": { "rig_host": "192.168.4.1:4532", "audio_cable": "VB-Audio Virtual Cable A" }
+    },
+    {
+      "label": "B",
+      "rigctld_port": 4536,
+      "audio_port_out": 4538,
+      "audio_port_in": 4539,
+      "radio_model": "YAESU_FT991A",
+      "wsjtx": { "rig_host": "192.168.4.1:4536", "audio_cable": "VB-Audio Virtual Cable B" }
+    },
+    {
+      "label": "C",
+      "rigctld_port": 4540,
+      "audio_port_out": 4541,
+      "audio_port_in": 4542,
+      "radio_model": "G90",
+      "wsjtx": { "rig_host": "192.168.4.1:4540", "audio_cable": "VB-Audio Virtual Cable C" }
+    }
+  ],
+  "rotctld_port": 4535,
+  "esp_sample_rate": 48000,
+  "host_sample_rate": 48000,
+  "block_ms": 20
+}
