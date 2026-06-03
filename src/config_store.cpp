@@ -13,6 +13,10 @@ void ConfigStore::setDefaults(AppConfig& cfg) {
     cfg.wifiPass[0] = '\0';
     cfg.remoteHost[0] = '\0';
     cfg.remotePort = RIGCTLD_PORT;
+    cfg.audioEnabled = false;
+    cfg.audioPortOut = AUDIO_PORT_OUT;
+    cfg.audioPortIn = AUDIO_PORT_IN;
+    cfg.audioSampleRate = AUDIO_SAMPLE_RATE;
 
     auto setPot = [](PotConfig& p, PotAction action, float minV, float maxV, float step) {
         p.action = action;
@@ -93,6 +97,10 @@ bool ConfigStore::load(AppConfig& cfg) {
     strlcpy(cfg.wifiPass, doc["wifi_pass"] | "", sizeof(cfg.wifiPass));
     strlcpy(cfg.remoteHost, doc["remote_host"] | "", sizeof(cfg.remoteHost));
     cfg.remotePort = doc["remote_port"] | RIGCTLD_PORT;
+    cfg.audioEnabled = doc["audio_enabled"] | false;
+    cfg.audioPortOut = doc["audio_port_out"] | AUDIO_PORT_OUT;
+    cfg.audioPortIn = doc["audio_port_in"] | AUDIO_PORT_IN;
+    cfg.audioSampleRate = doc["audio_sample_rate"] | AUDIO_SAMPLE_RATE;
 
     JsonArray pots = doc["pots"].as<JsonArray>();
     for (size_t i = 0; i < POT_COUNT && i < pots.size(); i++) {
@@ -116,6 +124,10 @@ bool ConfigStore::save(const AppConfig& cfg) {
     doc["wifi_pass"] = cfg.wifiPass;
     doc["remote_host"] = cfg.remoteHost;
     doc["remote_port"] = cfg.remotePort;
+    doc["audio_enabled"] = cfg.audioEnabled;
+    doc["audio_port_out"] = cfg.audioPortOut;
+    doc["audio_port_in"] = cfg.audioPortIn;
+    doc["audio_sample_rate"] = cfg.audioSampleRate;
 
     JsonArray pots = doc["pots"].to<JsonArray>();
     for (int i = 0; i < POT_COUNT; i++) {

@@ -6,6 +6,10 @@
   "wifi_pass": "",
   "remote_host": "",
   "remote_port": 4532,
+  "audio_enabled": false,
+  "audio_port_out": 4533,
+  "audio_port_in": 4534,
+  "audio_sample_rate": 16000,
   "pots": [
     {
       "action": "FREQ_COARSE",

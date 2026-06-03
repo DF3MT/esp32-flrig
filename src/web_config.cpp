@@ -1,4 +1,5 @@
 #include "web_config.h"
+#include "audio_bridge.h"
 #include <ESPAsyncWebServer.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
@@ -37,6 +38,15 @@ button{background:#00ff88;color:#111;border:none;padding:.6em 1.2em;cursor:point
 <input id="remote_host">
 <label>Remote Port</label>
 <input id="remote_port" type="number" value="4532">
+<h2>Audio über WiFi</h2>
+<label><input id="audio_enabled" type="checkbox"> Audio-Bridge aktiv (I2S + UDP/WebSocket)</label>
+<label>UDP Port Funk→Client</label>
+<input id="audio_port_out" type="number" value="4533">
+<label>UDP Port Client→Funk</label>
+<input id="audio_port_in" type="number" value="4534">
+<label>Sample Rate (Hz)</label>
+<input id="audio_sample_rate" type="number" value="16000">
+<p><a href="/audio">Audio-Monitor im Browser</a> (nur wenn Audio aktiv)</p>
 <div id="pots"></div>
 <button type="submit">Speichern &amp; Neustart</button>
 </form>
@@ -47,6 +57,10 @@ fetch('/api/config').then(r=>r.json()).then(c=>{
   cat_baud.value=c.cat_baud; wifi_ssid.value=c.wifi_ssid||'';
   wifi_pass.value=c.wifi_pass||''; remote_host.value=c.remote_host||'';
   remote_port.value=c.remote_port;
+  audio_enabled.checked=c.audio_enabled;
+  audio_port_out.value=c.audio_port_out;
+  audio_port_in.value=c.audio_port_in;
+  audio_sample_rate.value=c.audio_sample_rate;
   pots.innerHTML=c.pots.map((p,i)=>`
     <div class="pot"><b>Poti ${i+1}</b>
     <label>Aktion</label><select id="pot${i}_action">${actions.map(a=>`<option ${a===p.action?'selected':''}>${a}</option>`).join('')}</select>
@@ -61,6 +75,8 @@ cfg.onsubmit=e=>{e.preventDefault();
   const body={vendor:vendor.value,icom_address:parseInt(icom_address.value,16),
     cat_baud:+cat_baud.value,wifi_ssid:wifi_ssid.value,wifi_pass:wifi_pass.value,
     remote_host:remote_host.value,remote_port:+remote_port.value,
+    audio_enabled:audio_enabled.checked,audio_port_out:+audio_port_out.value,
+    audio_port_in:+audio_port_in.value,audio_sample_rate:+audio_sample_rate.value,
     pots:[...Array(5)].map((_,i)=>({action:document.getElementById('pot'+i+'_action').value,
       min:+document.getElementById('pot'+i+'_min').value,
       max:+document.getElementById('pot'+i+'_max').value,
@@ -92,6 +108,10 @@ bool WebConfig::begin(AppConfig* cfg, SaveCallback onSave) {
         doc["wifi_pass"] = _cfg->wifiPass;
         doc["remote_host"] = _cfg->remoteHost;
         doc["remote_port"] = _cfg->remotePort;
+        doc["audio_enabled"] = _cfg->audioEnabled;
+        doc["audio_port_out"] = _cfg->audioPortOut;
+        doc["audio_port_in"] = _cfg->audioPortIn;
+        doc["audio_sample_rate"] = _cfg->audioSampleRate;
         JsonArray pots = doc["pots"].to<JsonArray>();
         const char* names[] = {"NONE","FREQ_FINE","FREQ_COARSE","AF_GAIN","RF_POWER",
                                "RF_GAIN","SQUELCH","MIC_GAIN","RIT_OFFSET","CUSTOM_RIGCTL"};
@@ -125,6 +145,10 @@ bool WebConfig::begin(AppConfig* cfg, SaveCallback onSave) {
             strlcpy(_cfg->wifiPass, doc["wifi_pass"] | "", sizeof(_cfg->wifiPass));
             strlcpy(_cfg->remoteHost, doc["remote_host"] | "", sizeof(_cfg->remoteHost));
             _cfg->remotePort = doc["remote_port"] | RIGCTLD_PORT;
+            _cfg->audioEnabled = doc["audio_enabled"] | false;
+            _cfg->audioPortOut = doc["audio_port_out"] | AUDIO_PORT_OUT;
+            _cfg->audioPortIn = doc["audio_port_in"] | AUDIO_PORT_IN;
+            _cfg->audioSampleRate = doc["audio_sample_rate"] | AUDIO_SAMPLE_RATE;
 
             JsonArray pots = doc["pots"].as<JsonArray>();
             for (size_t i = 0; i < POT_COUNT && i < pots.size(); i++) {
@@ -152,14 +176,20 @@ bool WebConfig::begin(AppConfig* cfg, SaveCallback onSave) {
             ESP.restart();
         });
 
-    s_server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
+    s_server.on("/api/status", HTTP_GET, [this](AsyncWebServerRequest* req) {
         JsonDocument doc;
         doc["ip"] = WiFi.localIP().toString();
         doc["rigctld_port"] = RIGCTLD_PORT;
+        doc["audio_enabled"] = _cfg->audioEnabled;
+        doc["audio_port_out"] = _cfg->audioPortOut;
+        doc["audio_port_in"] = _cfg->audioPortIn;
+        doc["audio_ws"] = AUDIO_WS_PATH;
         String out;
         serializeJson(doc, out);
         req->send(200, "application/json", out);
     });
+
+    if (_audio) _audio->attachToServer(&s_server);
 
     s_server.begin();
     Serial.println("[web] config server started on :80");

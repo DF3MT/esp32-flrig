@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESP32 CAT Panel – Web Flasher</title>
+  <style>
+    :root {
+      --esp-tools-button-color: #00ff88;
+      --esp-tools-button-text-color: #111;
+      --esp-tools-button-border-radius: 6px;
+    }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      margin: 0;
+      padding: 1.5em;
+      line-height: 1.5;
+      max-width: 720px;
+      margin-inline: auto;
+    }
+    h1 { color: #00ff88; font-size: 1.5rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.5em; }
+    a { color: #00ff88; }
+    .card {
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1em 1.2em;
+      margin: 1em 0;
+      background: #16213e;
+    }
+    label { display: block; margin: 0.6em 0 0.25em; }
+    select {
+      width: 100%;
+      padding: 0.5em;
+      background: #0f0f1a;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+    }
+    .warn { color: #ffaa44; }
+    .err { color: #ff6b6b; }
+    ol { padding-left: 1.2em; }
+    code { background: #0f0f1a; padding: 0.15em 0.4em; border-radius: 3px; }
+    #status { min-height: 1.2em; }
+    esp-web-install-button[install-unsupported] + .hint { display: block; }
+    .hint { display: none; margin-top: 0.5em; color: #aaa; font-size: 0.9rem; }
+  </style>
+  <script
+    type="module"
+    src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
+  ></script>
+</head>
+<body>
+  <h1>ESP32 CAT Remote Panel</h1>
+  <p>Firmware direkt aus dem Browser flashen (Chrome, Edge oder Firefox – kein PlatformIO nötig).</p>
+
+  <div class="card">
+    <label for="board">Board-Variante</label>
+    <select id="board" aria-label="Board-Variante">
+      <option value="esp32-cyd">ESP32-2432S028 (Cheap Yellow Display)</option>
+      <option value="esp32-tdisplay">TTGO T-Display v1.1</option>
+      <option value="esp32-generic">Generisch (ILI9341 + XPT2046)</option>
+    </select>
+
+    <label><input type="checkbox" id="incFs" checked> Standard-<code>config.json</code> (LittleFS) mit flashen</label>
+
+    <p id="status"></p>
+
+    <esp-web-install-button id="install">
+      <button slot="activate" style="font-size:1rem;padding:0.65em 1.4em;cursor:pointer;border:none;border-radius:6px;background:#00ff88;color:#111;font-weight:600;">
+        Firmware installieren
+      </button>
+      <span slot="unsupported" class="warn">
+        Dein Browser unterstützt kein Web Serial. Bitte Chrome, Edge oder Firefox auf Desktop nutzen.
+      </span>
+      <span slot="not-allowed" class="warn">
+        Web Flasher braucht HTTPS oder <code>http://localhost</code> – nicht <code>file://</code>.
+      </span>
+    </esp-web-install-button>
+    <p class="hint">Nach dem Klick den ESP32 per USB verbinden und den seriellen Port auswählen.</p>
+  </div>
+
+  <h2>Anleitung</h2>
+  <ol>
+    <li>USB-Kabel an den ESP32 (CP2102/CH340).</li>
+    <li>Board-Variante oben wählen.</li>
+    <li><strong>Firmware installieren</strong> klicken und COM-Port bestätigen.</li>
+    <li>Schlägt der Upload fehl: <strong>BOOT</strong> (GPIO0) gedrückt halten, kurz <strong>RESET</strong>, BOOT loslassen, erneut versuchen.</li>
+    <li>Nach dem Flash: WiFi-AP <code>ESP32-CAT-Panel</code> / Passwort <code>hamradio123</code> → <code>http://192.168.4.1</code></li>
+  </ol>
+
+  <h2>Firmware-Dateien fehlen?</h2>
+  <p>Lokal bauen und Flasher-Assets erzeugen:</p>
+  <pre><code>./scripts/build_flasher_assets.sh
+./scripts/serve_flasher.sh</code></pre>
+  <p>Dann <a href="http://127.0.0.1:8765/">http://127.0.0.1:8765/</a> öffnen.</p>
+
+  <p style="color:#888;font-size:0.85rem;margin-top:2em;">
+    Basiert auf <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a>.
+    Alternative: <code>./scripts/flash.sh esp32-cyd</code>
+  </p>
+
+  <script>
+    const BOARDS = {
+      "esp32-cyd": {
+        label: "Cheap Yellow Display (CYD)",
+        manifest: "./firmware/esp32-cyd/manifest.json"
+      },
+      "esp32-tdisplay": {
+        label: "TTGO T-Display v1.1",
+        manifest: "./firmware/esp32-tdisplay/manifest.json"
+      },
+      "esp32-generic": {
+        label: "Generisch ILI9341",
+        manifest: "./firmware/esp32-generic/manifest.json"
+      }
+    };
+
+    const installBtn = document.getElementById("install");
+    const boardSel = document.getElementById("board");
+    const incFs = document.getElementById("incFs");
+    const status = document.getElementById("status");
+
+    async function checkManifest(url) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(r.status);
+        const m = await r.json();
+        status.textContent = "Firmware " + (m.version || "?") + " bereit.";
+        status.className = "";
+        return m;
+      } catch (e) {
+        status.innerHTML = '<span class="err">Keine Firmware unter <code>' + url +
+          '</code>. Bitte <code>./scripts/build_flasher_assets.sh</code> ausführen.</span>';
+        return null;
+      }
+    }
+
+    async function applyBoard() {
+      const key = boardSel.value;
+      const base = BOARDS[key].manifest;
+      const m = await checkManifest(base);
+      if (!m) {
+        installBtn.manifest = base;
+        return;
+      }
+
+      if (!incFs.checked) {
+        const clone = structuredClone(m);
+        for (const b of clone.builds || []) {
+          b.parts = (b.parts || []).filter(p => !String(p.path).includes("littlefs"));
+        }
+        installBtn.manifest = URL.createObjectURL(
+          new Blob([JSON.stringify(clone)], { type: "application/json" })
+        );
+        return;
+      }
+      installBtn.manifest = base;
+    }
+
+    boardSel.addEventListener("change", applyBoard);
+    incFs.addEventListener("change", applyBoard);
+    applyBoard();
+  </script>
+</body>
+</html>

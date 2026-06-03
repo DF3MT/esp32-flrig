@@ -9,6 +9,31 @@
 #define WEB_CONFIG_PORT     80
 #define FLRIG_XMLRPC_PORT   12345
 
+// ── WiFi-Audio (I2S ↔ UDP/WebSocket) ───────────────────────────────────────
+#define AUDIO_PORT_OUT      4533   // ESP → Client (Empfang vom Funk)
+#define AUDIO_PORT_IN       4534   // Client → ESP (Mikro zum Funk)
+#define AUDIO_WS_PATH       "/ws/audio"
+#define AUDIO_SAMPLE_RATE   16000
+#define AUDIO_FRAME_SAMPLES 320    // 20 ms @ 16 kHz
+#define AUDIO_MAGIC         0x45535041u  // 'ESPA'
+
+#ifdef BOARD_CYD
+  #define I2S_BCLK_PIN        26
+  #define I2S_LRCK_PIN        25
+  #define I2S_DOUT_PIN        22   // ESP → DAC → Funk-Mic/Line-In
+  #define I2S_DIN_PIN         4    // ADC → ESP ← Funk-Line-Out/SPKR
+#elif defined(BOARD_TDISPLAY)
+  #define I2S_BCLK_PIN        12
+  #define I2S_LRCK_PIN        13
+  #define I2S_DOUT_PIN        14
+  #define I2S_DIN_PIN         15
+#else
+  #define I2S_BCLK_PIN        26
+  #define I2S_LRCK_PIN        25
+  #define I2S_DOUT_PIN        22
+  #define I2S_DIN_PIN         4
+#endif
+
 // ── Radio UART (CAT) ────────────────────────────────────────────────────────
 #ifdef BOARD_TDISPLAY
   // GPIO16 = TFT_DC on TTGO T-Display – CAT auf freie Header-Pins
@@ -116,5 +141,17 @@ struct AppConfig {
     char            wifiPass[64]   = "";
     char            remoteHost[64] = "";    // flrig/rigctld IP
     uint16_t        remotePort   = RIGCTLD_PORT;
+    bool            audioEnabled = false;
+    uint16_t        audioPortOut = AUDIO_PORT_OUT;
+    uint16_t        audioPortIn  = AUDIO_PORT_IN;
+    uint32_t        audioSampleRate = AUDIO_SAMPLE_RATE;
     PotConfig       pots[POT_COUNT];
 };
+
+#pragma pack(push, 1)
+struct AudioPacketHdr {
+    uint32_t magic;
+    uint32_t seq;
+    uint16_t nSamples;
+};
+#pragma pack(pop)

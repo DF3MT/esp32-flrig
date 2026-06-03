@@ -7,6 +7,7 @@
 #include "pot_manager.h"
 #include "touch_ui.h"
 #include "web_config.h"
+#include "audio_bridge.h"
 
 static AppConfig      g_cfg;
 static ConfigStore    g_store;
@@ -15,6 +16,7 @@ static RigctldServer  g_rigctld;
 static PotManager     g_pots;
 static TouchUI        g_ui;
 static WebConfig      g_web;
+static AudioBridge    g_audio;
 
 static uint32_t g_lastPoll = 0;
 
@@ -81,11 +83,16 @@ void setup() {
     g_ui.begin();
     g_ui.updateState(g_cat.state());
 
+    g_web.setAudioBridge(&g_audio);
     g_web.begin(&g_cfg, onConfigSaved);
+    g_audio.begin(&g_cfg);
 
     Serial.printf("[rigctld] flrig/hamlib: rigctl -m 2 -r %s:%d\n",
                   WiFi.localIP().toString().c_str(), RIGCTLD_PORT);
     Serial.println("[web] config UI: http://" + WiFi.localIP().toString());
+    if (g_cfg.audioEnabled) {
+        Serial.println("[audio] monitor: http://" + WiFi.localIP().toString() + "/audio");
+    }
 }
 
 void loop() {
