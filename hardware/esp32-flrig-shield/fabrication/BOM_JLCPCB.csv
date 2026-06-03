@@ -1,16 +1,29 @@
 Comment,Designator,Footprint,Quantity,Value,LCSC Part #
-Level shifter 2-bit bidirectional, U1,Package_SO:SOIC-8_3.9x4.9mm_P1.27mm,1,TXS0102DCUR,C15029
-3.3V LDO 1A, U2,Package_TO_SOT_SMD:SOT-223-3_TabPin2,1,AMS1117-3.3,C6186
-I2S DAC module, U3,PCM5102_Module_6pin,1,PCM5102,DNP_HAND
-I2S mic module, U4,INMP441_Module_6pin,1,INMP441,DNP_HAND
+Digital isolator CAT UART 4ch, U1,Package_SO:SOIC-16_3.9x9.9mm_P1.27mm,1,ISO7741DBQR,C129009
+3.3V LDO 1A ESP domain, U2,Package_TO_SOT_SMD:SOT-223-3_TabPin2,1,AMS1117-3.3,C6186
+I2S DAC ESP side, U3,PCM5102_Module_6pin,1,PCM5102,DNP_HAND
+I2S mic ESP side, U4,INMP441_Module_6pin,1,INMP441,DNP_HAND
+USB 2.0 hub ESP side only, U5,USB2422_SSOP,1,USB2422,C93216
+USB isolator port B, U6,Package_SO:SOIC-16_3.9x9.9mm_P1.27mm,1,ADuM4160BRIZ,C1520665
+USB isolator port C, U7,Package_SO:SOIC-16_3.9x9.9mm_P1.27mm,1,ADuM4160BRIZ,C1520665
+Isolated DC/DC 5V for USB-B, U8,Converter_DCDC:Murata_NXE2S0505MC,1,B0505S-1WR3,C477535
+Isolated DC/DC 5V for USB-C, U9,Converter_DCDC:Murata_NXE2S0505MC,1,B0505S-1WR3,C477535
+Audio transformer AF in, T1,Transformer_THT:Transformer_Bourns_PTD005,1,600:600,DNP_HAND
+Audio transformer AF out, T2,Transformer_THT:Transformer_Bourns_PTD005,1,600:600,DNP_HAND
 RJ45 8P8C shielded, J1,RJ45_Amphenol_RJHSE5080,1,RJ45,C124375
-Header 2x10 2.54mm, J2,PinHeader_2x10_P2.54mm_Vertical,1,Conn_2x10,DNP_HAND
-PTC 500mA, F1,Fuse_1206_3216Metric,1,500mA,C13685
-Schottky OR-ing, D1,D_SMA,1,SS34,C8678
+Header 2x10 CYD, J2,PinHeader_2x10_P2.54mm_Vertical,1,Conn_2x10,DNP_HAND
+Header 1x8 S3 OTG+Rotor, J3,PinHeader_1x08_P2.54mm_Vertical,1,Conn_1x08,DNP_HAND
+USB-A female isolated B, J5,USB_A_Host_Receptacle_Vertical,1,USB-A_B,C2987969
+USB-A female isolated C, J6,USB_A_Host_Receptacle_Vertical,1,USB-A_C,C2987969
+Rotor GPIO header, J7,PinHeader_1x06_P2.54mm_Vertical,1,ROTOR,DNP_HAND
+PTC 500mA main, F1,Fuse_1206_3216Metric,1,500mA,C13685
+PTC 500mA USB-B, F2,Fuse_1206_3216Metric,1,500mA,C13685
+PTC 500mA USB-C, F3,Fuse_1206_3216Metric,1,500mA,C13685
+Schottky OR-ing ESP 5V, D1,D_SMA,1,SS34,C8678
 100nF decoupling, C1 C2 C3 C4 C5 C6 C7 C8,Capacitor_0805_2012Metric,8,100nF,C496
 10uF 0805, C9 C10,Capacitor_0805_2012Metric,2,10uF,C15850
-10uF bulk 5V/3V3, C11 C12,Capacitor_1206_3216Metric,2,10uF,C15850
-10uF audio coupling, C13 C14,CP_Radial_D5.0mm_P2.50mm,2,10uF,DNP_HAND
-10k divider AF in, R1 R2,Resistor_0805_2012Metric,2,10k,C25744
-1k series AF out, R3,Resistor_0805_2012Metric,1,1k,C11702
-10k I2S pull-down, R4 R5,Resistor_0805_2012Metric,2,10k,C25744
+10uF bulk, C11 C12,Capacitor_1206_3216Metric,2,10uF,C15850
+10uF audio coupling radio side, C13 C14,CP_Radial_D5.0mm_P2.50mm,2,10uF,DNP_HAND
+10k AF divider radio side, R1 R2,Resistor_0805_2012Metric,2,10k,C25744
+1k AF out radio side, R3,Resistor_0805_2012Metric,1,1k,C11702
+10k I2S pull-down ESP side, R4 R5,Resistor_0805_2012Metric,2,10k,C25744

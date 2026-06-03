@@ -1,4 +1,5 @@
 #include "radio_profiles.h"
+#include "config_sync.h"
 #include <cstring>
 
 static const RadioProfileInfo PROFILES[] = {
@@ -120,14 +121,20 @@ const RadioProfileInfo* radioProfileByIndex(size_t index) {
 
 size_t radioProfileCount() { return PROFILE_COUNT; }
 
-bool radioProfileApply(AppConfig& cfg, const char* id) {
+bool radioProfileApplyChannel(RadioChannelConfig& ch, const char* id) {
     const RadioProfileInfo* p = radioProfileFind(id);
     if (!p) return false;
-    strlcpy(cfg.radioModel, p->id, sizeof(cfg.radioModel));
-    cfg.vendor = p->vendor;
-    cfg.catBaud = p->catBaud;
+    strlcpy(ch.radioModel, p->id, sizeof(ch.radioModel));
+    ch.vendor = p->vendor;
+    ch.catBaud = p->catBaud;
     if (p->vendor == RadioVendor::ICOM)
-        cfg.icomAddress = p->icomAddress;
+        ch.icomAddress = p->icomAddress;
+    return true;
+}
+
+bool radioProfileApply(AppConfig& cfg, const char* id) {
+    if (!radioProfileApplyChannel(cfg.radios[0], id)) return false;
+    configSyncLegacyFromRadios(cfg);
     return true;
 }
 

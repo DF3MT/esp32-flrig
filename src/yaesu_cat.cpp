@@ -1,8 +1,8 @@
 #include "yaesu_cat.h"
 
-bool YaesuCat::begin(HardwareSerial& serial, uint32_t baud) {
+bool YaesuCat::begin(Stream& serial, uint32_t baud) {
+    (void)baud;
     _serial = &serial;
-    _serial->begin(baud, SERIAL_8N1, CAT_RX_PIN, CAT_TX_PIN);
     _rxBuf = "";
     return true;
 }

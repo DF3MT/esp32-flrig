@@ -1,5 +1,7 @@
 # Bestellung bei JLCPCB
 
+**PCB Revision:** **C** (100×72 mm) — RJ45 + **2× USB-A** + **galvanische Trennung** (ISO7741, ADuM4160×2, Audio-Trafos)
+
 ## 1. Fertige Gerber (sofort bei JLCPCB hochladen)
 
 **ZIP:** [`../fabrication/esp32-flrig-shield-jlc.zip`](../fabrication/esp32-flrig-shield-jlc.zip)

@@ -1,5 +1,6 @@
 #include "web_config.h"
-#include "audio_bridge.h"
+#include "radio_channel.h"
+#include "config_sync.h"
 #include "radio_profiles.h"
 #include <ESPAsyncWebServer.h>
 #include <WiFi.h>
@@ -268,6 +269,7 @@ bool WebConfig::begin(AppConfig* cfg, SaveCallback onSave) {
                 _cfg->pots[i].invert = p["invert"] | false;
                 strlcpy(_cfg->pots[i].customCmd, p["custom_cmd"] | "", sizeof(_cfg->pots[i].customCmd));
             }
+            configSyncRadiosFromLegacy(*_cfg);
             if (_onSave) _onSave(*_cfg);
             req->send(200, "text/plain", "OK");
             delay(500);
@@ -292,11 +294,18 @@ bool WebConfig::begin(AppConfig* cfg, SaveCallback onSave) {
         req->send(200, "application/json", out);
     });
 
-    if (_audio) _audio->attachToServer(&s_server);
 
     s_server.begin();
     Serial.println("[web] config server started on :80");
     return true;
+}
+
+void WebConfig::attachRadioAudio(RadioChannelManager* radios) {
+    if (!radios) return;
+    for (int i = 0; i < RadioChannelManager::kMax; i++) {
+        if (_cfg && _cfg->radios[i].audioEnabled)
+            radios->audio(i).attachToServer(&s_server);
+    }
 }
 
 void WebConfig::loop() {}

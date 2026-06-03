@@ -1,18 +1,25 @@
 # Bauanleitung — ESP32-FLRIG Interface Shield
 
-Platine **REV A** für [JLCPCB](https://jlcpcb.com) (2-layer, 1,6 mm). Firmware: Projekt `esp32-flrig`, Board **ESP32-2432S028 (CYD)**.
+Platine **REV C** (100×72 mm, **galvanisch getrennt**) für [JLCPCB](https://jlcpcb.com). Firmware: `pio run -e esp32-flrig-shield` mit **ESP32-S3** an **J3**. CYD nur Kanal A (J2), ohne USB-Isolation.
 
 ## Lieferumfang (selbst bestücken)
 
 | Referenz | Bauteil | Montage | JLC SMT |
 |----------|---------|---------|---------|
-| U1 | TXS0102DCUR (SSOP-8) | SMT | Ja |
+| U1 | ISO7741 (CAT-Isolator, SOIC-16) | SMT | Ja |
+| U6,U7 | ADuM4160 (USB-Isolator je Port) | SMT | Ja |
+| U8,U9 | B0505S isoliertes DC/DC | SMT | Ja |
+| T1,T2 | Audio-Trafo 600:600 | THT | Hand |
 | U2 | AMS1117-3.3 SOT-223 | SMT | Ja |
 | U3 | PCM5102A Modul 6-Pin | **THT Hand** | Nein |
 | U4 | INMP441 Modul 6-Pin | **THT Hand** | Nein |
 | J1 | RJ45 Buchse 8P8C mit Metallgehäuse | THT | Optional |
-| J2 | Stiftleiste 2×10, 2,54 mm | THT | Nein |
-| J3 | USB-C 5V nur (optional, Bestückungsvariante) | — | Nein |
+| U5 | USB2422 (SSOP-28) Hub | SMT | Ja |
+| J5,J6 | **USB-A Buchse weiblich** (Host, zum Funk) | THT | Hand |
+| J2 | Stiftleiste 2×10 CYD | THT | Nein |
+| J3 | Stiftleiste 1×8 → ESP32-S3 OTG + Rotor | THT | Nein |
+| J7 | Stiftleiste 1×6 Rotor (parallel J3 Pin5–8) | THT | Nein |
+| F2,F3 | Polyfuse 500 mA je USB-Port | SMT | Ja |
 | F1 | Polyfuse 500 mA | THT/SMT | Ja |
 | D1 | SS34 Schottky (USB OR Ext) | SMT | Ja |
 | C1–C8 | 100 nF Keramik 0805 | SMT | Ja |
@@ -97,8 +104,9 @@ Vollständige Stückliste: [`../fabrication/BOM_JLCPCB.csv`](../fabrication/BOM_
 
 ## Erste Inbetriebnahme
 
-1. **Ohne CYD:** RJ45 Pin1 mit 5V, GND Pin2 — 3,3V an J2 messen (≈ 3,3 V ± 5 %).
-2. **CAT:** Funk aus, Shifter VCCB = 5V, keine Kurzschlüsse auf CAT-Leitungen.
+1. **Isolation:** Zwischen **GND_ESP** (J2 Pin 3/4) und **GND_RADIO_A** (RJ45 Pin 2) → **∞ Ω** (kein Durchgang). Ebenso J5-GND vs. J6-GND vs. ESP.
+2. **Ohne CYD:** 3,3V an J2 (≈ 3,3 V ± 5 %). RJ45 +5V nur Funk-A-Domäne.
+3. **CAT (Computer Aided Transceiver):** Funk aus, ISO7741 Versorgung beidseitig, keine GND-Brücke.
 3. **CYD flashen**, Web-UI: Funkprofil wählen, Baudrate prüfen.
 4. **Audio:** `http://<ESP-IP>/audio` oder `scripts/ft8_remote.py <IP> --list-devices`.
 

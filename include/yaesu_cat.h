@@ -5,7 +5,7 @@
 // Yaesu CAT – ASCII commands terminated with ';'
 class YaesuCat : public CatProtocol {
 public:
-    bool begin(HardwareSerial& serial, uint32_t baud) override;
+    bool begin(Stream& serial, uint32_t baud) override;
     bool setFrequency(uint64_t hz) override;
     bool getFrequency(uint64_t& hz) override;
     bool setMode(const char* mode) override;
@@ -16,7 +16,7 @@ public:
     void poll() override;
 
 private:
-    HardwareSerial* _serial = nullptr;
+    Stream* _serial = nullptr;
     String _rxBuf;
 
     bool sendCommand(const char* cmd);

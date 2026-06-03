@@ -10,4 +10,5 @@ using RigctldServer = HamlibTcpServer;
 #define rigctlErr hamlibRprtErr
 
 String dispatchRigctl(const String& line, CatController& cat, RadioState& state,
-                      const AppConfig* cfg = nullptr);
+                      const AppConfig* cfg = nullptr,
+                      const RadioChannelConfig* channel = nullptr);

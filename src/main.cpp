@@ -2,25 +2,21 @@
 #include <WiFi.h>
 #include "config.h"
 #include "config_store.h"
-#include "cat_controller.h"
-#include "rigctld_server.h"
+#include "radio_channel.h"
 #include "rotctld_server.h"
 #include "rotor_controller.h"
 #include "pot_manager.h"
 #include "touch_ui.h"
 #include "web_config.h"
-#include "audio_bridge.h"
 
-static AppConfig      g_cfg;
-static ConfigStore    g_store;
-static CatController  g_cat;
-static RigctldServer  g_rigctld;
-static HamlibTcpServer g_rotctld;
-static RotorController g_rotor;
-static PotManager     g_pots;
-static TouchUI        g_ui;
-static WebConfig      g_web;
-static AudioBridge    g_audio;
+static AppConfig           g_cfg;
+static ConfigStore         g_store;
+static RadioChannelManager g_radios;
+static HamlibTcpServer     g_rotctld;
+static RotorController     g_rotor;
+static PotManager          g_pots;
+static TouchUI             g_ui;
+static WebConfig           g_web;
 
 static uint32_t g_lastPoll = 0;
 
@@ -57,29 +53,15 @@ static void onStateChange(const RadioState& state) {
 void setup() {
     Serial.begin(115200);
     delay(500);
-    Serial.println("\n=== ESP32 CAT Remote Panel ===");
+    Serial.printf("\n=== ESP32 CAT Remote Panel (%d Funk) ===\n", RADIO_COUNT);
 
     g_store.begin();
     g_store.load(g_cfg);
 
     setupWiFi();
 
-    // CAT direct to radio
-    if (g_cfg.connMode == ConnectionMode::DIRECT_CAT) {
-        if (g_cat.begin(g_cfg.vendor, g_cfg.catBaud, g_cfg.icomAddress)) {
-            Serial.println("[cat] radio connected");
-        } else {
-            Serial.println("[cat] radio init failed – check wiring/baud");
-        }
-    }
-
-    g_cat.onStateChange(onStateChange);
-
-    // rigctld server – flrig/hamlib can connect here
-    g_rigctld.begin(RIGCTLD_PORT, "rigctld");
-    g_rigctld.setHandler([](const String& cmd) -> String {
-        return dispatchRigctl(cmd, g_cat, g_cat.state(), &g_cfg);
-    });
+    g_radios.cat(0).onStateChange(onStateChange);
+    g_radios.begin(g_cfg);
 
     g_rotor.begin(g_cfg);
     g_rotctld.begin(g_cfg.rotctldPort, "rotctld");
@@ -89,40 +71,51 @@ void setup() {
 
     g_pots.begin(g_cfg.pots);
 
-    g_ui.setCatController(&g_cat);
+    g_ui.setCatController(&g_radios.cat(0));
     g_ui.begin();
-    g_ui.updateState(g_cat.state());
+    g_ui.updateState(g_radios.cat(0).state());
 
-    g_web.setAudioBridge(&g_audio);
     g_web.begin(&g_cfg, onConfigSaved);
-    g_audio.begin(&g_cfg);
+    g_web.attachRadioAudio(&g_radios);
 
-    Serial.printf("[rigctld] rigctl -m 2 -r %s:%d\n",
-                  WiFi.localIP().toString().c_str(), RIGCTLD_PORT);
+    IPAddress ip = WiFi.localIP();
+    if (!ip) ip = WiFi.softAPIP();
+
+    for (int i = 0; i < RADIO_COUNT; i++) {
+        if (!g_cfg.radios[i].enabled) continue;
+        Serial.printf("[rigctld-%s] rigctl -m 2 -r %s:%u\n",
+                      g_cfg.radios[i].label, ip.toString().c_str(),
+                      g_cfg.radios[i].rigctldPort);
+    }
     if (g_cfg.rotorEnabled) {
         Serial.printf("[rotctld] rotctl -m 2 -r %s:%d\n",
-                      WiFi.localIP().toString().c_str(), g_cfg.rotctldPort);
+                      ip.toString().c_str(), g_cfg.rotctldPort);
     }
-    Serial.println("[web] config UI: http://" + WiFi.localIP().toString());
-    if (g_cfg.audioEnabled) {
-        Serial.println("[audio] monitor: http://" + WiFi.localIP().toString() + "/audio");
-    }
+    Serial.println("[web] config UI: http://" + ip.toString());
+    if (g_cfg.radios[0].audioEnabled)
+        Serial.println("[audio-A] http://" + ip.toString() + "/audio");
+#if RADIO_COUNT > 1
+    if (g_cfg.radios[1].audioEnabled)
+        Serial.println("[audio-B] http://" + ip.toString() + "/audio_b");
+#endif
+#if RADIO_COUNT > 2
+    if (g_cfg.radios[2].audioEnabled)
+        Serial.println("[audio-C] http://" + ip.toString() + "/audio_c");
+#endif
 }
 
 void loop() {
-    g_rigctld.loop();
+    g_radios.loop();
     g_rotctld.loop();
     g_rotor.loop();
-    g_cat.poll();
-    g_pots.loop(g_cat, g_cat.state());
+    g_pots.loop(g_radios.cat(0), g_radios.cat(0).state());
     g_ui.loop();
 
-    // periodic radio poll (freq/mode sync)
     if (millis() - g_lastPoll > 1000) {
         g_lastPoll = millis();
         uint64_t hz = 0;
-        if (g_cat.getFrequency(hz)) {
-            RadioState st = g_cat.state();
+        if (g_radios.cat(0).getFrequency(hz)) {
+            RadioState st = g_radios.cat(0).state();
             g_ui.updateState(st);
         }
     }

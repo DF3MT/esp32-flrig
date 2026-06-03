@@ -16,7 +16,7 @@ struct RadioState {
 class CatProtocol {
 public:
     virtual ~CatProtocol() = default;
-    virtual bool begin(HardwareSerial& serial, uint32_t baud) = 0;
+    virtual bool begin(Stream& serial, uint32_t baud) = 0;
     virtual bool setFrequency(uint64_t hz) = 0;
     virtual bool getFrequency(uint64_t& hz) = 0;
     virtual bool setMode(const char* mode) = 0;
@@ -29,7 +29,7 @@ public:
 
 class CatController {
 public:
-    bool begin(RadioVendor vendor, uint32_t baud, uint8_t icomAddr = 0x94);
+    bool begin(Stream& serial, RadioVendor vendor, uint32_t baud, uint8_t icomAddr = 0x94);
     void setVendor(RadioVendor v);
     void poll();
 
@@ -48,7 +48,7 @@ public:
     void onStateChange(StateCallback cb) { _callback = cb; }
 
 private:
-    HardwareSerial _serial{2};
+    Stream*        _serial = nullptr;
     CatProtocol*   _proto = nullptr;
     RadioState     _state;
     StateCallback  _callback;

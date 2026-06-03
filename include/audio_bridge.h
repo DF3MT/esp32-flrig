@@ -2,10 +2,11 @@
 
 #include "config.h"
 #include <ESPAsyncWebServer.h>
+#include <WiFiUdp.h>
 
 class AudioBridge {
 public:
-    bool begin(const AppConfig* cfg);
+    bool begin(const RadioChannelConfig* ch, uint8_t channelIndex = 0);
     void attachToServer(AsyncWebServer* server);
     static void taskEntry(void* arg);
 
@@ -15,13 +16,16 @@ private:
     void sendToClient(const int16_t* samples, size_t n);
     void onClientAudio(const uint8_t* data, size_t len, bool fromWs);
 
-    const AppConfig* _cfg = nullptr;
+    const RadioChannelConfig* _ch = nullptr;
+    uint8_t _channelIndex = 0;
+    int _i2sPort = 0;  // I2S_NUM_0 / I2S_NUM_1
     bool _running = false;
     uint32_t _seqOut = 0;
     IPAddress _udpClientIp;
     uint16_t _udpClientPortOut = 0;
     bool _udpActive = false;
     uint16_t _frameSamples = 960;
-
-    static AudioBridge* _instance;
+    WiFiUDP _udpIn;
+    WiFiUDP _udpOut;
+    AsyncWebSocket* _ws = nullptr;
 };

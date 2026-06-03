@@ -1,12 +1,81 @@
 #include "config_store.h"
+#include "config_sync.h"
 #include "radio_profiles.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
 const char* ConfigStore::PATH = "/config.json";
 
+static const char* catLinkStr(CatLinkType t) {
+    return t == CatLinkType::USB_CDC ? "usb" : "uart";
+}
+static const char* audioLinkStr(AudioLinkType t) {
+    return t == AudioLinkType::USB_UAC ? "usb" : "i2s";
+}
+static CatLinkType parseCatLink(const char* s) {
+    return (s && strcmp(s, "usb") == 0) ? CatLinkType::USB_CDC : CatLinkType::UART;
+}
+static AudioLinkType parseAudioLink(const char* s) {
+    return (s && strcmp(s, "usb") == 0) ? AudioLinkType::USB_UAC : AudioLinkType::I2S;
+}
+
+static void loadRadioChannel(JsonObject o, RadioChannelConfig& ch) {
+    ch.enabled = o["enabled"] | false;
+    strlcpy(ch.label, o["label"] | "A", sizeof(ch.label));
+    const char* model = o["radio_model"] | "";
+    if (model[0]) {
+        strlcpy(ch.radioModel, model, sizeof(ch.radioModel));
+        radioProfileApplyChannel(ch, ch.radioModel);
+    }
+    const char* vendor = o["vendor"] | nullptr;
+    if (vendor)
+        ch.vendor = (strcmp(vendor, "YAESU") == 0) ? RadioVendor::YAESU : RadioVendor::ICOM;
+    ch.catLink = parseCatLink(o["cat_link"] | "uart");
+    ch.audioLink = parseAudioLink(o["audio_link"] | "i2s");
+    ch.catBaud = o["cat_baud"] | CAT_DEFAULT_BAUD;
+    ch.icomAddress = o["icom_address"] | 0x94;
+    ch.uartRxPin = o["uart_rx"] | ch.uartRxPin;
+    ch.uartTxPin = o["uart_tx"] | ch.uartTxPin;
+    ch.usbHostIndex = o["usb_index"] | ch.usbHostIndex;
+    ch.rigctldPort = o["rigctld_port"] | ch.rigctldPort;
+    ch.audioEnabled = o["audio_enabled"] | false;
+    ch.audioPortOut = o["audio_port_out"] | ch.audioPortOut;
+    ch.audioPortIn = o["audio_port_in"] | ch.audioPortIn;
+    ch.audioSampleRate = o["audio_sample_rate"] | AUDIO_SAMPLE_RATE;
+}
+
+static void saveRadioChannel(JsonObject o, const RadioChannelConfig& ch) {
+    o["enabled"] = ch.enabled;
+    o["label"] = ch.label;
+    o["radio_model"] = ch.radioModel;
+    o["vendor"] = (ch.vendor == RadioVendor::YAESU) ? "YAESU" : "ICOM";
+    o["cat_link"] = catLinkStr(ch.catLink);
+    o["audio_link"] = audioLinkStr(ch.audioLink);
+    o["cat_baud"] = ch.catBaud;
+    o["icom_address"] = ch.icomAddress;
+    o["uart_rx"] = ch.uartRxPin;
+    o["uart_tx"] = ch.uartTxPin;
+    o["usb_index"] = ch.usbHostIndex;
+    o["rigctld_port"] = ch.rigctldPort;
+    o["audio_enabled"] = ch.audioEnabled;
+    o["audio_port_out"] = ch.audioPortOut;
+    o["audio_port_in"] = ch.audioPortIn;
+    o["audio_sample_rate"] = ch.audioSampleRate;
+}
+
 void ConfigStore::setDefaults(AppConfig& cfg) {
+    for (int i = 0; i < RADIO_COUNT; i++)
+        radioChannelDefaults(cfg.radios[i], i);
     radioProfileApply(cfg, "IC-7300");
+#if defined(BOARD_FLRIG_SHIELD)
+    radioChannelDefaults(cfg.radios[1], 1);
+    radioChannelDefaults(cfg.radios[2], 2);
+#elif RADIO_COUNT > 1
+    cfg.radios[1].enabled = false;
+#if RADIO_COUNT > 2
+    cfg.radios[2].enabled = false;
+#endif
+#endif
     cfg.connMode = ConnectionMode::DIRECT_CAT;
     cfg.wifiSsid[0] = '\0';
     cfg.wifiPass[0] = '\0';
@@ -138,41 +207,59 @@ bool ConfigStore::load(AppConfig& cfg) {
         cfg.pots[i].invert = p["invert"] | false;
         strlcpy(cfg.pots[i].customCmd, p["custom_cmd"] | "", sizeof(cfg.pots[i].customCmd));
     }
+
+    JsonArray radios = doc["radios"].as<JsonArray>();
+    if (!radios.isNull() && radios.size() > 0) {
+        for (size_t i = 0; i < (size_t)RADIO_COUNT && i < radios.size(); i++)
+            loadRadioChannel(radios[i], cfg.radios[i]);
+    } else {
+        configSyncRadiosFromLegacy(cfg);
+    }
+    configSyncLegacyFromRadios(cfg);
     return true;
 }
 
 bool ConfigStore::save(const AppConfig& cfg) {
+    AppConfig snap = cfg;
+    configSyncLegacyFromRadios(snap);
+
     JsonDocument doc;
-    doc["radio_model"] = cfg.radioModel;
-    doc["vendor"] = (cfg.vendor == RadioVendor::YAESU) ? "YAESU" : "ICOM";
-    doc["icom_address"] = cfg.icomAddress;
-    doc["cat_baud"] = cfg.catBaud;
-    doc["wifi_ssid"] = cfg.wifiSsid;
-    doc["wifi_pass"] = cfg.wifiPass;
-    doc["remote_host"] = cfg.remoteHost;
-    doc["remote_port"] = cfg.remotePort;
-    doc["audio_enabled"] = cfg.audioEnabled;
-    doc["audio_port_out"] = cfg.audioPortOut;
-    doc["audio_port_in"] = cfg.audioPortIn;
-    doc["audio_sample_rate"] = cfg.audioSampleRate;
-    doc["rotor_enabled"] = cfg.rotorEnabled;
-    doc["rotor_btn_ccw"] = cfg.rotorBtnCcw;
-    doc["rotor_btn_cw"] = cfg.rotorBtnCw;
-    doc["rotor_oc_ccw"] = cfg.rotorOcCcw;
-    doc["rotor_oc_cw"] = cfg.rotorOcCw;
-    doc["rotctld_port"] = cfg.rotctldPort;
-    doc["rotor_speed"] = cfg.rotorSpeed;
-    doc["rotor_debounce_ms"] = cfg.rotorDebounceMs;
+    doc["radio_model"] = snap.radioModel;
+    doc["vendor"] = (snap.vendor == RadioVendor::YAESU) ? "YAESU" : "ICOM";
+    doc["icom_address"] = snap.icomAddress;
+    doc["cat_baud"] = snap.catBaud;
+    doc["wifi_ssid"] = snap.wifiSsid;
+    doc["wifi_pass"] = snap.wifiPass;
+    doc["remote_host"] = snap.remoteHost;
+    doc["remote_port"] = snap.remotePort;
+    doc["audio_enabled"] = snap.audioEnabled;
+    doc["audio_port_out"] = snap.audioPortOut;
+    doc["audio_port_in"] = snap.audioPortIn;
+    doc["audio_sample_rate"] = snap.audioSampleRate;
+    doc["rotor_enabled"] = snap.rotorEnabled;
+    doc["rotor_btn_ccw"] = snap.rotorBtnCcw;
+    doc["rotor_btn_cw"] = snap.rotorBtnCw;
+    doc["rotor_oc_ccw"] = snap.rotorOcCcw;
+    doc["rotor_oc_cw"] = snap.rotorOcCw;
+    doc["rotctld_port"] = snap.rotctldPort;
+    doc["rotor_speed"] = snap.rotorSpeed;
+    doc["rotor_debounce_ms"] = snap.rotorDebounceMs;
+
+    JsonArray radios = doc["radios"].to<JsonArray>();
+    for (int i = 0; i < RADIO_COUNT; i++) {
+        JsonObject r = radios.add<JsonObject>();
+        saveRadioChannel(r, snap.radios[i]);
+    }
 
     JsonArray pots = doc["pots"].to<JsonArray>();
     for (int i = 0; i < POT_COUNT; i++) {
         JsonObject p = pots.add<JsonObject>();
-        p["action"] = actionToStr(cfg.pots[i].action);
-        p["min"] = cfg.pots[i].minValue;
-        p["max"] = cfg.pots[i].maxValue;
-        p["step"] = cfg.pots[i].step;
-        p["invert"] = cfg.pots[i].invert;
-        p["custom_cmd"] = cfg.pots[i].customCmd;
+        p["action"] = actionToStr(snap.pots[i].action);
+        p["min"] = snap.pots[i].minValue;
+        p["max"] = snap.pots[i].maxValue;
+        p["step"] = snap.pots[i].step;
+        p["invert"] = snap.pots[i].invert;
+        p["custom_cmd"] = snap.pots[i].customCmd;
     }
 
     File f = LittleFS.open(PATH, "w");

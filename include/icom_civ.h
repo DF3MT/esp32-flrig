@@ -7,7 +7,7 @@ class IcomCiv : public CatProtocol {
 public:
     explicit IcomCiv(uint8_t radioAddr = 0x94, uint8_t ctrlAddr = 0xE0);
 
-    bool begin(HardwareSerial& serial, uint32_t baud) override;
+    bool begin(Stream& serial, uint32_t baud) override;
     bool setFrequency(uint64_t hz) override;
     bool getFrequency(uint64_t& hz) override;
     bool setMode(const char* mode) override;
@@ -20,7 +20,7 @@ public:
     void setRadioAddress(uint8_t addr) { _radioAddr = addr; }
 
 private:
-    HardwareSerial* _serial = nullptr;
+    Stream* _serial = nullptr;
     uint8_t _radioAddr;
     uint8_t _ctrlAddr;
     uint8_t _rxBuf[128];

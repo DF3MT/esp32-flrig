@@ -5,7 +5,8 @@
 static IcomCiv  s_icom;
 static YaesuCat s_yaesu;
 
-bool CatController::begin(RadioVendor vendor, uint32_t baud, uint8_t icomAddr) {
+bool CatController::begin(Stream& serial, RadioVendor vendor, uint32_t baud, uint8_t icomAddr) {
+    _serial = &serial;
     _vendor = vendor;
     _icomAddr = icomAddr;
     s_icom.setRadioAddress(icomAddr);
@@ -16,7 +17,7 @@ bool CatController::begin(RadioVendor vendor, uint32_t baud, uint8_t icomAddr) {
         _proto = &s_yaesu;
     }
 
-    if (!_proto->begin(_serial, baud)) return false;
+    if (!_proto->begin(*_serial, baud)) return false;
 
     _state.connected = true;
     getFrequency(_state.freqHz);

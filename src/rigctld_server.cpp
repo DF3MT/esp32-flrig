@@ -18,7 +18,7 @@ static bool parseSetMode(const String& cmd, String& mode) {
 }
 
 String dispatchRigctl(const String& line, CatController& cat, RadioState& state,
-                      const AppConfig* cfg) {
+                      const AppConfig* cfg, const RadioChannelConfig* channel) {
     String cmd = line;
     cmd.trim();
 
@@ -127,9 +127,20 @@ String dispatchRigctl(const String& line, CatController& cat, RadioState& state,
 
     if (cmd == "\\get_info") {
         String info = "ESP32 CAT Remote Panel";
-        if (cfg && cfg->radioModel[0]) {
+        const char* modelId = nullptr;
+        if (channel && channel->radioModel[0])
+            modelId = channel->radioModel;
+        else if (cfg && cfg->radioModel[0])
+            modelId = cfg->radioModel;
+        if (modelId) {
+            const RadioProfileInfo* p = radioProfileFind(modelId);
             info += " / ";
-            info += radioProfileLabel(*cfg);
+            info += p ? p->label : modelId;
+            if (channel && channel->label[0]) {
+                info += " [";
+                info += channel->label;
+                info += ']';
+            }
         }
         return info + "\n" + rigctlOk();
     }

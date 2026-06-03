@@ -6,17 +6,17 @@
   (title_block
     (title "ESP32-FLRIG Interface Shield")
     (date "2025")
-    (rev "A")
+    (rev "C")
     (company "esp32-flrig")
-    (comment 1 "RJ45: Power + CAT + Audio")
-    (comment 2 "CYD 2x10 header J2")
+    (comment 1 "RJ45 A + 2x USB-A B/C + USB2422 Hub")
+    (comment 2 "J3 S3 OTG+Rotor J7 CYD J2")
   )
   (lib_symbols)
-  (text "Rev A — Vollständiger logischer Schaltplan: docs/SCHEMATIC.md"
+  (text "Rev C — isolated GND per radio: docs/SCHEMATIC.md + docs/ISOLATION.md"
     (exclude_from_sim no) (at 25.4 25.4 0) (effects (font (size 2.54 2.54))) (uuid 11111111-1111-1111-1111-111111111102))
   (text "KiCad: Netze und Symbole in PCB-Layout verdrahtet. Vor Fertigung DRC + Review."
     (exclude_from_sim no) (at 25.4 31.75 0) (effects (font (size 2.032 2.032))) (uuid 11111111-1111-1111-1111-111111111103))
-  (text "U1 TXS0102  CAT 3V3<->5V\nU2 AMS1117  5V->3V3\nU3 PCM5102  I2S DAC\nU4 INMP441   I2S IN\nJ1 RJ45     ESP32-FLRIG-1\nJ2 2x10     CYD GPIO"
+  (text "U1 TXS0102  CAT analog A\nU5 USB2422  Hub -> J5 J6 USB-A\nJ1 RJ45 J5/J6 J3 S3 J7 Rotor\nU3/U4 I2S Audio A"
     (exclude_from_sim no) (at 25.4 50.8 0) (effects (font (size 2.54 2.54) (color 0 120 80 1))) (uuid 11111111-1111-1111-1111-111111111104))
   (sheet_instances
     (path "/" (page "1"))

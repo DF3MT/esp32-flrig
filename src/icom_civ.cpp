@@ -3,9 +3,9 @@
 IcomCiv::IcomCiv(uint8_t radioAddr, uint8_t ctrlAddr)
     : _radioAddr(radioAddr), _ctrlAddr(ctrlAddr) {}
 
-bool IcomCiv::begin(HardwareSerial& serial, uint32_t baud) {
+bool IcomCiv::begin(Stream& serial, uint32_t baud) {
+    (void)baud;
     _serial = &serial;
-    _serial->begin(baud, SERIAL_8N1, CAT_RX_PIN, CAT_TX_PIN);
     _rxLen = 0;
     return true;
 }

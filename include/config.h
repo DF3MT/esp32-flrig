@@ -2,17 +2,34 @@
 
 #include <Arduino.h>
 
+// CAT = Computer Aided Transceiver (ICOM/Yaesu control), not shared ground between rigs.
+
 // ── WiFi / rigctld ──────────────────────────────────────────────────────────
 #define WIFI_AP_SSID        "ESP32-CAT-Panel"
 #define WIFI_AP_PASS        "hamradio123"
-#define RIGCTLD_PORT        4532
+#define RIGCTLD_PORT        4532   // Funk A (Hamlib NET rigctl)
+#define RIGCTLD_PORT_B      4536   // Funk B
+#define RIGCTLD_PORT_C      4540   // Funk C
 #define ROTCTLD_PORT        4535   // Hamlib rotctld (nicht 4533 = Audio-UDP)
+#ifndef RADIO_COUNT
+  #if defined(BOARD_FLRIG_SHIELD) || defined(BOARD_TRIPLE_RADIO)
+    #define RADIO_COUNT     3
+  #elif defined(BOARD_DUAL_RADIO)
+    #define RADIO_COUNT     2
+  #else
+    #define RADIO_COUNT     1
+  #endif
+#endif
 #define WEB_CONFIG_PORT     80
 #define FLRIG_XMLRPC_PORT   12345
 
 // ── WiFi-Audio (I2S ↔ UDP/WebSocket) ───────────────────────────────────────
-#define AUDIO_PORT_OUT      4533   // ESP → Client (Empfang vom Funk)
-#define AUDIO_PORT_IN       4534   // Client → ESP (Mikro zum Funk)
+#define AUDIO_PORT_OUT      4533   // Funk A: ESP → Client
+#define AUDIO_PORT_IN       4534   // Funk A: Client → ESP
+#define AUDIO_PORT_OUT_B    4538   // Funk B
+#define AUDIO_PORT_IN_B     4539
+#define AUDIO_PORT_OUT_C    4541   // Funk C
+#define AUDIO_PORT_IN_C     4542
 #define AUDIO_WS_PATH       "/ws/audio"
 #define AUDIO_SAMPLE_RATE   48000   // Standard für WSJT-X / FT8 (16000 in config möglich)
 #define AUDIO_FRAME_MS      20
@@ -40,6 +57,29 @@ inline uint16_t audioFrameSamples(uint32_t sampleRateHz) {
   #define I2S_DIN_PIN         4
 #endif
 
+// Zweiter I2S-Bus (Funk B) – nur wenn 2× Audio per I2S
+#ifdef BOARD_S3_USB_HOST
+  #define I2S1_BCLK_PIN       12
+  #define I2S1_LRCK_PIN       13
+  #define I2S1_DOUT_PIN       14
+  #define I2S1_DIN_PIN        15
+#elif defined(BOARD_CYD)
+  #define I2S1_BCLK_PIN       12
+  #define I2S1_LRCK_PIN       13
+  #define I2S1_DOUT_PIN       14
+  #define I2S1_DIN_PIN        15
+#endif
+
+#ifdef BOARD_FLRIG_SHIELD
+  /* ESP32-S3 DevKitC-1 + Rev-B Shield (J3) */
+  #define CAT_RX_PIN          16
+  #define CAT_TX_PIN          17
+  #define ROTOR_BTN_CCW_DEFAULT   27
+  #define ROTOR_BTN_CW_DEFAULT    5
+  #define ROTOR_OC_CCW_DEFAULT    18
+  #define ROTOR_OC_CW_DEFAULT     19
+#endif
+
 // ── Radio UART (CAT) ────────────────────────────────────────────────────────
 #ifdef BOARD_TDISPLAY
   // GPIO16 = TFT_DC on TTGO T-Display – CAT auf freie Header-Pins
@@ -48,6 +88,11 @@ inline uint16_t audioFrameSamples(uint32_t sampleRateHz) {
 #else
   #define CAT_RX_PIN          16
   #define CAT_TX_PIN          17
+#endif
+// Funk B UART (TTL), wenn nicht USB
+#ifndef CAT_B_RX_PIN
+  #define CAT_B_RX_PIN        5
+  #define CAT_B_TX_PIN        18
 #endif
 #define CAT_BAUD_ICOM       19200
 #define CAT_BAUD_YAESU      38400
@@ -124,6 +169,8 @@ inline uint16_t audioFrameSamples(uint32_t sampleRateHz) {
   #define TFT_HEIGHT        240
 #endif
 
+#define RADIO_MODEL_ID_LEN  24
+
 // ── Radio types ─────────────────────────────────────────────────────────────
 enum class RadioVendor : uint8_t {
     ICOM = 0,
@@ -135,6 +182,80 @@ enum class ConnectionMode : uint8_t {
     FLRIG_CLIENT = 1,   // ESP32 → PC flrig XML-RPC
     HAMLIB_CLIENT = 2,  // ESP32 → PC rigctld
 };
+
+/** CAT-Leitung zum Funkgerät */
+enum class CatLinkType : uint8_t {
+    UART = 0,       // GPIO TTL / Level-Shifter / RJ45-Shield
+    USB_CDC = 1,    // USB-Serial am Funk (ESP32-S3 Host + Hub)
+};
+
+/** Audio-Pfad pro Funk */
+enum class AudioLinkType : uint8_t {
+    I2S = 0,        // PCM5102 + INMP441 (oder Shield RJ45)
+    USB_UAC = 1,    // USB-Audio des Funkgeräts (nur ESP32-S3 Host)
+};
+
+struct RadioChannelConfig {
+    bool            enabled = false;
+    char            label[8] = "A";
+    char            radioModel[RADIO_MODEL_ID_LEN] = "IC-7300";
+    RadioVendor     vendor = RadioVendor::ICOM;
+    CatLinkType     catLink = CatLinkType::UART;
+    AudioLinkType   audioLink = AudioLinkType::I2S;
+    uint32_t        catBaud = CAT_DEFAULT_BAUD;
+    uint8_t         icomAddress = 0x94;
+    int8_t          uartRxPin = -1;
+    int8_t          uartTxPin = -1;
+    uint8_t         usbHostIndex = 0;   // Reihenfolge am USB-Hub (0, 1)
+    uint16_t        rigctldPort = RIGCTLD_PORT;
+    bool            audioEnabled = false;
+    uint16_t        audioPortOut = AUDIO_PORT_OUT;
+    uint16_t        audioPortIn = AUDIO_PORT_IN;
+    uint32_t        audioSampleRate = AUDIO_SAMPLE_RATE;
+};
+
+inline void radioChannelDefaults(RadioChannelConfig& ch, int index) {
+    ch.enabled = (index == 0);
+    snprintf(ch.label, sizeof(ch.label), "%c", 'A' + index);
+    ch.catLink = CatLinkType::UART;
+    ch.audioLink = AudioLinkType::I2S;
+
+    if (index == 0) {
+        ch.rigctldPort = RIGCTLD_PORT;
+        ch.audioPortOut = AUDIO_PORT_OUT;
+        ch.audioPortIn = AUDIO_PORT_IN;
+#ifdef CAT_RX_PIN
+        ch.uartRxPin = CAT_RX_PIN;
+        ch.uartTxPin = CAT_TX_PIN;
+#endif
+#if defined(BOARD_FLRIG_SHIELD)
+        ch.enabled = true;
+#endif
+    } else if (index == 1) {
+        ch.rigctldPort = RIGCTLD_PORT_B;
+        ch.audioPortOut = AUDIO_PORT_OUT_B;
+        ch.audioPortIn = AUDIO_PORT_IN_B;
+        ch.usbHostIndex = 0;
+#if defined(BOARD_FLRIG_SHIELD) || defined(BOARD_S3_USB_HOST)
+        ch.catLink = CatLinkType::USB_CDC;
+        ch.audioLink = AudioLinkType::USB_UAC;
+        ch.enabled = true;
+#else
+        ch.uartRxPin = CAT_B_RX_PIN;
+        ch.uartTxPin = CAT_B_TX_PIN;
+#endif
+    } else {
+        ch.rigctldPort = RIGCTLD_PORT_C;
+        ch.audioPortOut = AUDIO_PORT_OUT_C;
+        ch.audioPortIn = AUDIO_PORT_IN_C;
+        ch.usbHostIndex = 1;
+#if defined(BOARD_FLRIG_SHIELD) || defined(BOARD_S3_USB_HOST)
+        ch.catLink = CatLinkType::USB_CDC;
+        ch.audioLink = AudioLinkType::USB_UAC;
+        ch.enabled = true;
+#endif
+    }
+}
 
 // ── Pot action types (frei programmierbar) ────────────────────────────────────
 enum class PotAction : uint8_t {
@@ -159,18 +280,18 @@ struct PotConfig {
     bool      invert   = false;
 };
 
-#define RADIO_MODEL_ID_LEN  24
-
 struct AppConfig {
-    char            radioModel[RADIO_MODEL_ID_LEN] = "IC-7300";
-    RadioVendor     vendor       = RadioVendor::ICOM;
     ConnectionMode  connMode     = ConnectionMode::DIRECT_CAT;
-    uint32_t        icomAddress  = 0x94;    // IC-7300 default
-    uint32_t        catBaud      = CAT_DEFAULT_BAUD;
+    RadioChannelConfig radios[RADIO_COUNT];
     char            wifiSsid[32]   = "";
     char            wifiPass[64]   = "";
-    char            remoteHost[64] = "";    // flrig/rigctld IP
+    char            remoteHost[64] = "";    // flrig/rigctld IP (Client-Modus)
     uint16_t        remotePort   = RIGCTLD_PORT;
+    /** Legacy / Kanal 0 Spiegel */
+    char            radioModel[RADIO_MODEL_ID_LEN] = "IC-7300";
+    RadioVendor     vendor       = RadioVendor::ICOM;
+    uint32_t        icomAddress  = 0x94;
+    uint32_t        catBaud      = CAT_DEFAULT_BAUD;
     bool            audioEnabled = false;
     uint16_t        audioPortOut = AUDIO_PORT_OUT;
     uint16_t        audioPortIn  = AUDIO_PORT_IN;

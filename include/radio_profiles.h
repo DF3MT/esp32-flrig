@@ -18,5 +18,6 @@ struct RadioProfileInfo {
 const RadioProfileInfo* radioProfileFind(const char* id);
 const RadioProfileInfo* radioProfileByIndex(size_t index);
 size_t radioProfileCount();
+bool radioProfileApplyChannel(RadioChannelConfig& ch, const char* id);
 bool radioProfileApply(AppConfig& cfg, const char* id);
 const char* radioProfileLabel(const AppConfig& cfg);

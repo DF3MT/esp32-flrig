@@ -1,15 +1,8 @@
 #include "audio_bridge.h"
 #include <WiFi.h>
-#include <WiFiUdp.h>
 #include <driver/i2s.h>
 #include <AsyncWebSocket.h>
 #include <cstring>
-
-AudioBridge* AudioBridge::_instance = nullptr;
-
-static WiFiUDP s_udpIn;
-static WiFiUDP s_udpOut;
-static AsyncWebSocket* s_ws = nullptr;
 
 static const char AUDIO_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -38,7 +31,9 @@ function log(m){st.textContent=m;}
 document.getElementById('start').onclick=async()=>{
   ctx=new AudioContext({sampleRate:SR});
   const proto=location.protocol==='https:'?'wss:':'ws:';
-  ws=new WebSocket(proto+'//'+location.host+'/ws/audio');
+  const p=location.pathname;
+  const wspath=p.indexOf('_c')>=0?'/ws/audio_c':(p.indexOf('_b')>=0?'/ws/audio_b':'/ws/audio');
+  ws=new WebSocket(proto+'//'+location.host+wspath);
   ws.binaryType='arraybuffer';
   ws.onopen=async()=>{
     log('WebSocket verbunden');
@@ -99,65 +94,96 @@ document.getElementById('stop').onclick=()=>{
 </html>
 )rawliteral";
 
-bool AudioBridge::begin(const AppConfig* cfg) {
-    _instance = this;
-    _cfg = cfg;
-    if (!cfg->audioEnabled) {
-        Serial.println("[audio] disabled in config");
+bool AudioBridge::begin(const RadioChannelConfig* ch, uint8_t channelIndex) {
+    _ch = ch;
+    _channelIndex = channelIndex;
+    if (!ch || !ch->audioEnabled) {
+        Serial.printf("[audio-%s] disabled\n", ch ? ch->label : "?");
         return true;
     }
 
-    if (!initI2s()) {
-        Serial.println("[audio] I2S init failed");
-        return false;
+    if (ch->audioLink == AudioLinkType::USB_UAC) {
+        Serial.printf("[audio-%s] USB-UAC: S3 Host + Hub (Treiber folgt)\n", ch->label);
+        return true;
     }
 
-    if (!s_udpIn.begin(cfg->audioPortIn)) {
-        Serial.println("[audio] UDP in bind failed");
-        return false;
-    }
-
-    _frameSamples = audioFrameSamples(_cfg->audioSampleRate);
+    _frameSamples = audioFrameSamples(ch->audioSampleRate);
     if (_frameSamples == 0 || _frameSamples > AUDIO_FRAME_SAMPLES_MAX)
         _frameSamples = audioFrameSamples(AUDIO_SAMPLE_RATE);
 
-    _running = true;
-    xTaskCreatePinnedToCore(taskEntry, "audio", 12288, this, 1, nullptr, 0);
+    if (!initI2s()) {
+        Serial.printf("[audio-%s] I2S init failed\n", ch->label);
+        return false;
+    }
 
-    Serial.printf("[audio] UDP out :%u (radio→client) in :%u (client→radio)\n",
-                  cfg->audioPortOut, cfg->audioPortIn);
-    Serial.printf("[audio] %u Hz mono, Web UI /audio\n", cfg->audioSampleRate);
+    if (!_udpIn.begin(ch->audioPortIn)) {
+        Serial.printf("[audio-%s] UDP in :%u bind failed\n", ch->label, ch->audioPortIn);
+        return false;
+    }
+
+    _running = true;
+    char taskName[12];
+    snprintf(taskName, sizeof(taskName), "audio%c", ch->label[0]);
+    xTaskCreatePinnedToCore(taskEntry, taskName, 12288, this, 1, nullptr, 0);
+
+    Serial.printf("[audio-%s] UDP out:%u in:%u %lu Hz I2S%d\n",
+                  ch->label, ch->audioPortOut, ch->audioPortIn,
+                  (unsigned long)ch->audioSampleRate, (int)_i2sPort);
     return true;
 }
 
 void AudioBridge::attachToServer(AsyncWebServer* server) {
-    if (!server || !_cfg || !_cfg->audioEnabled) return;
+    if (!server || !_ch || !_ch->audioEnabled || !_running) return;
 
-    server->on("/audio", HTTP_GET, [](AsyncWebServerRequest* req) {
+    const char* pagePath = "/audio";
+    const char* wsPath = AUDIO_WS_PATH;
+    if (_channelIndex == 1) {
+        pagePath = "/audio_b";
+        wsPath = "/ws/audio_b";
+    } else if (_channelIndex == 2) {
+        pagePath = "/audio_c";
+        wsPath = "/ws/audio_c";
+    }
+
+    server->on(pagePath, HTTP_GET, [](AsyncWebServerRequest* req) {
         req->send_P(200, "text/html", AUDIO_PAGE);
     });
 
-    s_ws = new AsyncWebSocket(AUDIO_WS_PATH);
-    s_ws->onEvent([](AsyncWebSocket* ws, AsyncWebSocketClient* client,
-                     AwsEventType type, void* arg, uint8_t* data, size_t len) {
-        if (!_instance || !_instance->_running) return;
+    _ws = new AsyncWebSocket(wsPath);
+    AudioBridge* self = this;
+    _ws->onEvent([self](AsyncWebSocket* ws, AsyncWebSocketClient* client,
+                        AwsEventType type, void* arg, uint8_t* data, size_t len) {
+        if (!self->_running) return;
         if (type == WS_EVT_CONNECT) {
-            Serial.printf("[audio] WS client %s\n",
+            Serial.printf("[audio-%s] WS %s\n", self->_ch->label,
                           client->remoteIP().toString().c_str());
         } else if (type == WS_EVT_DISCONNECT) {
             (void)ws;
         } else if (type == WS_EVT_DATA && arg) {
             AwsFrameInfo* info = (AwsFrameInfo*)arg;
-            if (info->opcode == WS_BINARY && info->index == 0 && info->final) {
-                _instance->onClientAudio(data, len, true);
-            }
+            if (info->opcode == WS_BINARY && info->index == 0 && info->final)
+                self->onClientAudio(data, len, true);
         }
     });
-    server->addHandler(s_ws);
+    server->addHandler(_ws);
 }
 
 bool AudioBridge::initI2s() {
-    const uint32_t rate = _cfg->audioSampleRate;
+    const uint32_t rate = _ch->audioSampleRate;
+    int bclk = I2S_BCLK_PIN, lrck = I2S_LRCK_PIN, dout = I2S_DOUT_PIN, din = I2S_DIN_PIN;
+
+    _i2sPort = (_channelIndex == 0) ? (int)I2S_NUM_0 : (int)I2S_NUM_1;
+    if (_channelIndex > 0) {
+#if defined(I2S1_BCLK_PIN)
+        bclk = I2S1_BCLK_PIN;
+        lrck = I2S1_LRCK_PIN;
+        dout = I2S1_DOUT_PIN;
+        din = I2S1_DIN_PIN;
+#else
+        Serial.printf("[audio-%s] kein 2. I2S-Bus definiert\n", _ch->label);
+        return false;
+#endif
+    }
 
     i2s_config_t i2s_cfg = {};
     i2s_cfg.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX);
@@ -171,46 +197,51 @@ bool AudioBridge::initI2s() {
     i2s_cfg.use_apll = false;
     i2s_cfg.tx_desc_auto_clear = true;
 
-    if (i2s_driver_install(I2S_NUM_0, &i2s_cfg, 0, nullptr) != ESP_OK)
+    if (i2s_driver_install((i2s_port_t)_i2sPort, &i2s_cfg, 0, nullptr) != ESP_OK)
         return false;
 
     i2s_pin_config_t pins = {};
-    pins.bck_io_num = I2S_BCLK_PIN;
-    pins.ws_io_num = I2S_LRCK_PIN;
-    pins.data_out_num = I2S_DOUT_PIN;
-    pins.data_in_num = I2S_DIN_PIN;
+    pins.bck_io_num = bclk;
+    pins.ws_io_num = lrck;
+    pins.data_out_num = dout;
+    pins.data_in_num = din;
     pins.mck_io_num = I2S_PIN_NO_CHANGE;
 
-    if (i2s_set_pin(I2S_NUM_0, &pins) != ESP_OK) return false;
-    i2s_set_clk(I2S_NUM_0, rate, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
+    if (i2s_set_pin((i2s_port_t)_i2sPort, &pins) != ESP_OK) return false;
+    i2s_set_clk((i2s_port_t)_i2sPort, rate, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
     return true;
 }
 
 void AudioBridge::taskEntry(void* arg) {
     auto* self = static_cast<AudioBridge*>(arg);
-    while (self->_running) {
+    while (self->_running)
         self->loopOnce();
-    }
     vTaskDelete(nullptr);
 }
 
 void AudioBridge::loopOnce() {
+    if (!_running || _ch->audioLink != AudioLinkType::I2S) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        return;
+    }
+
     int16_t buf[AUDIO_FRAME_SAMPLES_MAX];
     size_t bytesRead = 0;
     size_t wantBytes = _frameSamples * sizeof(int16_t);
-    i2s_read(I2S_NUM_0, buf, wantBytes, &bytesRead, pdMS_TO_TICKS(50));
+    i2s_read((i2s_port_t)_i2sPort, buf, wantBytes, &bytesRead, pdMS_TO_TICKS(50));
     size_t n = bytesRead / sizeof(int16_t);
     if (n > 0) sendToClient(buf, n);
 
-    int packetSize = s_udpIn.parsePacket();
+    int packetSize = _udpIn.parsePacket();
     if (packetSize > 0) {
         uint8_t rxBuf[sizeof(AudioPacketHdr) + AUDIO_FRAME_SAMPLES_MAX * sizeof(int16_t)];
-        int len = s_udpIn.read(rxBuf, sizeof(rxBuf));
+        int len = _udpIn.read(rxBuf, sizeof(rxBuf));
         if (!_udpActive) {
-            _udpClientIp = s_udpIn.remoteIP();
-            _udpClientPortOut = _cfg->audioPortOut;
+            _udpClientIp = _udpIn.remoteIP();
+            _udpClientPortOut = _ch->audioPortOut;
             _udpActive = true;
-            Serial.printf("[audio] UDP client %s\n", _udpClientIp.toString().c_str());
+            Serial.printf("[audio-%s] UDP client %s\n", _ch->label,
+                          _udpClientIp.toString().c_str());
         }
         onClientAudio(rxBuf, len, false);
     }
@@ -218,8 +249,8 @@ void AudioBridge::loopOnce() {
 
 void AudioBridge::sendToClient(const int16_t* samples, size_t n) {
     if (n == 0) return;
-
     if (n > AUDIO_FRAME_SAMPLES_MAX) n = AUDIO_FRAME_SAMPLES_MAX;
+
     uint8_t pkt[sizeof(AudioPacketHdr) + AUDIO_FRAME_SAMPLES_MAX * sizeof(int16_t)];
     AudioPacketHdr* hdr = reinterpret_cast<AudioPacketHdr*>(pkt);
     hdr->magic = AUDIO_MAGIC;
@@ -228,17 +259,17 @@ void AudioBridge::sendToClient(const int16_t* samples, size_t n) {
     memcpy(pkt + sizeof(AudioPacketHdr), samples, n * sizeof(int16_t));
     size_t pktLen = sizeof(AudioPacketHdr) + n * sizeof(int16_t);
 
-    if (s_ws) {
-        for (auto& c : s_ws->getClients()) {
+    if (_ws) {
+        for (auto& c : _ws->getClients()) {
             if (c.status() == WS_CONNECTED)
                 c.binary(pkt, pktLen);
         }
     }
 
     if (_udpActive && _udpClientIp) {
-        s_udpOut.beginPacket(_udpClientIp, _udpClientPortOut);
-        s_udpOut.write(pkt, pktLen);
-        s_udpOut.endPacket();
+        _udpOut.beginPacket(_udpClientIp, _udpClientPortOut);
+        _udpOut.write(pkt, pktLen);
+        _udpOut.endPacket();
     }
 }
 
@@ -251,5 +282,5 @@ void AudioBridge::onClientAudio(const uint8_t* data, size_t len, bool fromWs) {
     if (len < sizeof(AudioPacketHdr) + pcmBytes) return;
     const int16_t* pcm = reinterpret_cast<const int16_t*>(data + sizeof(AudioPacketHdr));
     size_t written = 0;
-    i2s_write(I2S_NUM_0, pcm, pcmBytes, &written, pdMS_TO_TICKS(50));
+    i2s_write((i2s_port_t)_i2sPort, pcm, pcmBytes, &written, pdMS_TO_TICKS(50));
 }
