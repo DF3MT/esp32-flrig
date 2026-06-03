@@ -28,6 +28,8 @@ Shield für **ESP32-S3** (USB-Host) oder optional **CYD** (nur Kanal A):
 
 ![Blockdiagramm](assets/block_diagram.svg)
 
+![PCB preview (Gerber)](fabrication/esp32-flrig-shield-preview.jpg)
+
 ## Fertige Gerber für JLCPCB
 
 **Upload:** [`fabrication/esp32-flrig-shield-jlc.zip`](fabrication/esp32-flrig-shield-jlc.zip)

@@ -42,6 +42,11 @@
   <img src="hardware/esp32-flrig-shield/assets/block_diagram.svg" width="720" alt="System overview">
 </p>
 
+<p align="center">
+  <img src="docs/assets/pcb-preview.jpg" width="720" alt="PCB Rev C preview (Gerber layers)">
+</p>
+<p align="center"><sub>DE: Platine Rev C · Kupfer, Lötstop, Paste, Silk, Bohrungen · EN: Rev C board preview</sub></p>
+
 ---
 
 <a id="deutsch"></a>

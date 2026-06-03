@@ -22,5 +22,6 @@ PYTHON="${PYTHON:-$REPO/.venv/bin/python}"
 if [[ ! -x "$PYTHON" ]]; then
   PYTHON=python3
 fi
-"$PYTHON" "$ROOT/generate_gerbers.py" --zip
+"$PYTHON" "$ROOT/generate_gerbers.py" --zip --preview
 echo "OK (Python): $ZIP"
+echo "Preview: $ROOT/../fabrication/esp32-flrig-shield-preview.jpg"

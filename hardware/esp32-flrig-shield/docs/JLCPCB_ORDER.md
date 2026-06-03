@@ -25,7 +25,13 @@ Einzeldateien: `fabrication/gerbers/`
 ```bash
 cd hardware/esp32-flrig-shield/kicad
 ./export_gerbers.sh
-# oder: python3 generate_gerbers.py --zip
+# oder: python3 generate_gerbers.py --zip --preview
+```
+
+**Vorschau (JPG):** [`../fabrication/esp32-flrig-shield-preview.jpg`](../fabrication/esp32-flrig-shield-preview.jpg) — alle Gerber-Layer (Kupfer, Mask, Paste, Silk, Bohrungen).
+
+```bash
+python3 render_pcb_preview.py --copy-docs   # JPG + SVG, optional in docs/assets/
 ```
 
 Mit **KiCad 7+** (`kicad-cli`) falls installiert, sonst automatisch **Python** (`kiutils` + `gerbonara` aus Projekt-`.venv`).
