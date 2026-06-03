@@ -21,6 +21,7 @@ private:
     IPAddress _udpClientIp;
     uint16_t _udpClientPortOut = 0;
     bool _udpActive = false;
+    uint16_t _frameSamples = 960;
 
     static AudioBridge* _instance;
 };

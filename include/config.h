@@ -6,6 +6,7 @@
 #define WIFI_AP_SSID        "ESP32-CAT-Panel"
 #define WIFI_AP_PASS        "hamradio123"
 #define RIGCTLD_PORT        4532
+#define ROTCTLD_PORT        4535   // Hamlib rotctld (nicht 4533 = Audio-UDP)
 #define WEB_CONFIG_PORT     80
 #define FLRIG_XMLRPC_PORT   12345
 
@@ -13,9 +14,14 @@
 #define AUDIO_PORT_OUT      4533   // ESP → Client (Empfang vom Funk)
 #define AUDIO_PORT_IN       4534   // Client → ESP (Mikro zum Funk)
 #define AUDIO_WS_PATH       "/ws/audio"
-#define AUDIO_SAMPLE_RATE   16000
-#define AUDIO_FRAME_SAMPLES 320    // 20 ms @ 16 kHz
+#define AUDIO_SAMPLE_RATE   48000   // Standard für WSJT-X / FT8 (16000 in config möglich)
+#define AUDIO_FRAME_MS      20
+#define AUDIO_FRAME_SAMPLES_MAX 960  // 20 ms @ 48 kHz
 #define AUDIO_MAGIC         0x45535041u  // 'ESPA'
+
+inline uint16_t audioFrameSamples(uint32_t sampleRateHz) {
+    return (uint16_t)(sampleRateHz * AUDIO_FRAME_MS / 1000);
+}
 
 #ifdef BOARD_CYD
   #define I2S_BCLK_PIN        26
@@ -61,6 +67,27 @@
 #define POT_DEADZONE        8      // raw ADC steps
 #define POT_POLL_MS         50
 #define POT_SMOOTH_SAMPLES  4
+
+// ── Rotor (Hamlib rotctld + GPIO, Open-Collector-Ausgänge) ─────────────────
+// Extern: NPN/Open-Collector + Relais + Freilaufdiode. GPIO LOW = Relais ein.
+#ifdef BOARD_CYD
+  #define ROTOR_BTN_CCW_DEFAULT   27
+  #define ROTOR_BTN_CW_DEFAULT    5
+  #define ROTOR_OC_CCW_DEFAULT    18
+  #define ROTOR_OC_CW_DEFAULT     19
+#elif defined(BOARD_TDISPLAY)
+  #define ROTOR_BTN_CCW_DEFAULT   12
+  #define ROTOR_BTN_CW_DEFAULT    13
+  #define ROTOR_OC_CCW_DEFAULT    21
+  #define ROTOR_OC_CW_DEFAULT     22
+#else
+  #define ROTOR_BTN_CCW_DEFAULT   27
+  #define ROTOR_BTN_CW_DEFAULT    5
+  #define ROTOR_OC_CCW_DEFAULT    18
+  #define ROTOR_OC_CW_DEFAULT     19
+#endif
+#define ROTOR_SPEED_DEFAULT       50
+#define ROTOR_DEBOUNCE_MS_DEFAULT 40
 
 // ── Display ─────────────────────────────────────────────────────────────────
 #ifdef BOARD_CYD
@@ -132,7 +159,10 @@ struct PotConfig {
     bool      invert   = false;
 };
 
+#define RADIO_MODEL_ID_LEN  24
+
 struct AppConfig {
+    char            radioModel[RADIO_MODEL_ID_LEN] = "IC-7300";
     RadioVendor     vendor       = RadioVendor::ICOM;
     ConnectionMode  connMode     = ConnectionMode::DIRECT_CAT;
     uint32_t        icomAddress  = 0x94;    // IC-7300 default
@@ -145,6 +175,14 @@ struct AppConfig {
     uint16_t        audioPortOut = AUDIO_PORT_OUT;
     uint16_t        audioPortIn  = AUDIO_PORT_IN;
     uint32_t        audioSampleRate = AUDIO_SAMPLE_RATE;
+    bool            rotorEnabled   = true;
+    uint8_t         rotorBtnCcw    = ROTOR_BTN_CCW_DEFAULT;
+    uint8_t         rotorBtnCw     = ROTOR_BTN_CW_DEFAULT;
+    uint8_t         rotorOcCcw     = ROTOR_OC_CCW_DEFAULT;
+    uint8_t         rotorOcCw      = ROTOR_OC_CW_DEFAULT;
+    uint16_t        rotctldPort    = ROTCTLD_PORT;
+    uint8_t         rotorSpeed     = ROTOR_SPEED_DEFAULT;
+    uint32_t        rotorDebounceMs = ROTOR_DEBOUNCE_MS_DEFAULT;
     PotConfig       pots[POT_COUNT];
 };
 

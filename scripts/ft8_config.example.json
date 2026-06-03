@@ -1,0 +1,23 @@
+{
+  "esp_host": "192.168.4.1",
+  "rigctld_port": 4532,
+  "audio_port_out": 4533,
+  "audio_port_in": 4534,
+  "esp_sample_rate": 48000,
+  "host_sample_rate": 48000,
+  "block_ms": 20,
+  "radio_model": "YAESU_FT991A",
+  "play_device": null,
+  "rec_device": null,
+  "wsjtx": {
+    "rig_model": "2",
+    "mode": "USB",
+    "split": false,
+    "ptt_method": "CAT"
+  },
+  "notes": {
+    "play_device": "sounddevice Index: spielt Funk-RX (ESP UDP out) auf virtuelles Kabel",
+    "rec_device": "sounddevice Index: nimmt WSJT-X TX auf, sendet an ESP UDP in",
+    "radio_model": "Profil-ID wie in Web-UI, nur Dokumentation"
+  }
+}

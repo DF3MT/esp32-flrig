@@ -51,14 +51,23 @@ bool YaesuCat::getFrequency(uint64_t& hz) {
 }
 
 char YaesuCat::yaesuModeFromStr(const char* mode) {
-    if (!mode) return '1';
+    if (!mode) return '2';
     if (strcasecmp(mode, "LSB") == 0) return '1';
     if (strcasecmp(mode, "USB") == 0) return '2';
     if (strcasecmp(mode, "CW")  == 0) return '3';
     if (strcasecmp(mode, "FM")  == 0) return '4';
     if (strcasecmp(mode, "AM")  == 0) return '5';
     if (strcasecmp(mode, "RTTY") == 0) return '6';
-    if (strcasecmp(mode, "DATA") == 0 || strcasecmp(mode, "DIG") == 0) return '8';
+    if (strcasecmp(mode, "CW-R") == 0 || strcasecmp(mode, "CWR") == 0) return '7';
+    if (strcasecmp(mode, "DATA-LSB") == 0 || strcasecmp(mode, "DIGL") == 0) return '8';
+    if (strcasecmp(mode, "DATA") == 0 || strcasecmp(mode, "DIG") == 0 ||
+        strcasecmp(mode, "DIGI") == 0) return '8';
+    // FT-991/910/DX: DATA-USB, PKTUSB, FT8 (WSJT-X)
+    if (strcasecmp(mode, "DATA-USB") == 0 || strcasecmp(mode, "USB-D") == 0 ||
+        strcasecmp(mode, "PKTUSB") == 0 || strcasecmp(mode, "PKT") == 0 ||
+        strcasecmp(mode, "DIGU") == 0 || strcasecmp(mode, "FT8") == 0 ||
+        strcasecmp(mode, "FM-D") == 0) return '9';
+    if (strcasecmp(mode, "AM-D") == 0) return 'A';
     return '2';
 }
 
@@ -71,7 +80,10 @@ void YaesuCat::strFromYaesuMode(char ymode, char* out, size_t len) {
         case '4': m = "FM";  break;
         case '5': m = "AM";  break;
         case '6': m = "RTTY"; break;
+        case '7': m = "CW-R"; break;
         case '8': m = "DATA"; break;
+        case '9': m = "DATA-USB"; break;
+        case 'A': m = "AM-D"; break;
         default: break;
     }
     strncpy(out, m, len - 1);

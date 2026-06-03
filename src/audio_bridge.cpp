@@ -31,7 +31,7 @@ h1{color:#00ff88}button{background:#00ff88;color:#111;border:none;padding:.6em 1
 <button id="stop" disabled>Trennen</button>
 <p id="st">Bereit</p>
 <script>
-const SR=16000,FRAME=320;
+const SR=48000,FRAME=960;
 let ws,ctx,playNode,proc,micStream,seq=0;
 const st=document.getElementById('st');
 function log(m){st.textContent=m;}
@@ -117,8 +117,12 @@ bool AudioBridge::begin(const AppConfig* cfg) {
         return false;
     }
 
+    _frameSamples = audioFrameSamples(_cfg->audioSampleRate);
+    if (_frameSamples == 0 || _frameSamples > AUDIO_FRAME_SAMPLES_MAX)
+        _frameSamples = audioFrameSamples(AUDIO_SAMPLE_RATE);
+
     _running = true;
-    xTaskCreatePinnedToCore(taskEntry, "audio", 8192, this, 1, nullptr, 0);
+    xTaskCreatePinnedToCore(taskEntry, "audio", 12288, this, 1, nullptr, 0);
 
     Serial.printf("[audio] UDP out :%u (radio→client) in :%u (client→radio)\n",
                   cfg->audioPortOut, cfg->audioPortIn);
@@ -163,7 +167,7 @@ bool AudioBridge::initI2s() {
     i2s_cfg.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     i2s_cfg.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
     i2s_cfg.dma_buf_count = 4;
-    i2s_cfg.dma_buf_len = AUDIO_FRAME_SAMPLES;
+    i2s_cfg.dma_buf_len = _frameSamples;
     i2s_cfg.use_apll = false;
     i2s_cfg.tx_desc_auto_clear = true;
 
@@ -191,15 +195,16 @@ void AudioBridge::taskEntry(void* arg) {
 }
 
 void AudioBridge::loopOnce() {
-    int16_t buf[AUDIO_FRAME_SAMPLES];
+    int16_t buf[AUDIO_FRAME_SAMPLES_MAX];
     size_t bytesRead = 0;
-    i2s_read(I2S_NUM_0, buf, sizeof(buf), &bytesRead, pdMS_TO_TICKS(50));
+    size_t wantBytes = _frameSamples * sizeof(int16_t);
+    i2s_read(I2S_NUM_0, buf, wantBytes, &bytesRead, pdMS_TO_TICKS(50));
     size_t n = bytesRead / sizeof(int16_t);
     if (n > 0) sendToClient(buf, n);
 
     int packetSize = s_udpIn.parsePacket();
     if (packetSize > 0) {
-        uint8_t rxBuf[sizeof(AudioPacketHdr) + AUDIO_FRAME_SAMPLES * sizeof(int16_t)];
+        uint8_t rxBuf[sizeof(AudioPacketHdr) + AUDIO_FRAME_SAMPLES_MAX * sizeof(int16_t)];
         int len = s_udpIn.read(rxBuf, sizeof(rxBuf));
         if (!_udpActive) {
             _udpClientIp = s_udpIn.remoteIP();
@@ -214,7 +219,8 @@ void AudioBridge::loopOnce() {
 void AudioBridge::sendToClient(const int16_t* samples, size_t n) {
     if (n == 0) return;
 
-    uint8_t pkt[sizeof(AudioPacketHdr) + AUDIO_FRAME_SAMPLES * sizeof(int16_t)];
+    if (n > AUDIO_FRAME_SAMPLES_MAX) n = AUDIO_FRAME_SAMPLES_MAX;
+    uint8_t pkt[sizeof(AudioPacketHdr) + AUDIO_FRAME_SAMPLES_MAX * sizeof(int16_t)];
     AudioPacketHdr* hdr = reinterpret_cast<AudioPacketHdr*>(pkt);
     hdr->magic = AUDIO_MAGIC;
     hdr->seq = _seqOut++;

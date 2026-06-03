@@ -72,7 +72,12 @@ uint8_t IcomCiv::modeToIcom(const char* mode) {
     if (strcasecmp(mode, "CW")  == 0) return 0x03;
     if (strcasecmp(mode, "RTTY") == 0) return 0x04;
     if (strcasecmp(mode, "FM")  == 0) return 0x05;
-    if (strcasecmp(mode, "DIG") == 0 || strcasecmp(mode, "DATA") == 0) return 0x0A;
+    if (strcasecmp(mode, "DIG") == 0 || strcasecmp(mode, "DATA") == 0 ||
+        strcasecmp(mode, "DIGI") == 0) return 0x0A;
+    if (strcasecmp(mode, "USB-D") == 0 || strcasecmp(mode, "DATA-USB") == 0 ||
+        strcasecmp(mode, "PKTUSB") == 0 || strcasecmp(mode, "DIGU") == 0 ||
+        strcasecmp(mode, "FT8") == 0) return 0x01;
+    if (strcasecmp(mode, "DATA-LSB") == 0 || strcasecmp(mode, "DIGL") == 0) return 0x00;
     return 0x01;
 }
 

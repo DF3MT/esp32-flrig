@@ -1,7 +1,8 @@
 {
+  "radio_model": "IC-7300",
   "vendor": "ICOM",
   "icom_address": 148,
-  "cat_baud": 38400,
+  "cat_baud": 19200,
   "wifi_ssid": "",
   "wifi_pass": "",
   "remote_host": "",
@@ -9,7 +10,15 @@
   "audio_enabled": false,
   "audio_port_out": 4533,
   "audio_port_in": 4534,
-  "audio_sample_rate": 16000,
+  "audio_sample_rate": 48000,
+  "rotor_enabled": true,
+  "rotor_btn_ccw": 27,
+  "rotor_btn_cw": 5,
+  "rotor_oc_ccw": 18,
+  "rotor_oc_cw": 19,
+  "rotctld_port": 4535,
+  "rotor_speed": 50,
+  "rotor_debounce_ms": 40,
   "pots": [
     {
       "action": "FREQ_COARSE",

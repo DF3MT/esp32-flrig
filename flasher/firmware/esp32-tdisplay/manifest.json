@@ -1,5 +1,5 @@
 {
-  "name": "ESP32 CAT Panel (CYD)",
+  "name": "ESP32 CAT Panel (T-Display)",
   "version": "0354486",
   "new_install_prompt_erase": true,
   "builds": [

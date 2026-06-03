@@ -1,456 +1,264 @@
-# ESP32 CAT Remote Panel
-
-ESP32-basiertes Funkfernbedienungs-Panel mit Touch-Display, 5 programmierbaren Potentiometern, universeller **ICOM CI-V** / **Yaesu CAT**-Steuerung und optionaler **Audio-Bridge** (Empfang/Mikrofon des Funkgeräts über WiFi). Kompatibel mit **[flrig](https://github.com/w1hkj/flrig)** und **[Hamlib rigctld](https://hamlib.sourceforge.net/html/rigctld.1.html)** über das standardisierte rigctl-TCP-Protokoll (Port 4532).
-
-## Architektur
-
-```
-┌─────────────┐   WiFi/TCP:4532    ┌──────────────┐     I2S      ┌─────────┐
-│ flrig/fldigi│◄──────────────────►│   ESP32      │◄────────────►│ Funk    │
-│ WSJT-X etc. │   rigctl           │  rigctld     │   CAT UART   │ ICOM /  │
-└─────────────┘                    │  Audio-UDP   │              │ YAESU   │
-       ▲                           │  :4533/4534  │              └─────────┘
-       │  optional                 └──────┬───────┘
-       │  PCM 16 kHz mono                │ LVGL / Potis
-┌──────┴──────┐                          │
-│ PC / Browser│  UDP oder WebSocket /ws/audio
-└─────────────┘
-```
-
-### Betriebsmodi
-
-| Modus | Beschreibung |
-|-------|-------------|
-| **DIRECT_CAT** (Standard) | ESP32 steuert das Funkgerät direkt per UART |
-| **Client → flrig** | ESP32 als rigctl-Client zu PC mit flrig (Modell 4, Port 12345) |
-| **Client → rigctld** | ESP32 als Client zu Hamlib rigctld auf dem PC |
-
-## Hardware
-
-### Empfohlen: ESP32-2432S028 (Cheap Yellow Display)
-
-| Funktion | GPIO |
-|----------|------|
-| CAT RX | 16 |
-| CAT TX | 17 |
-| I2S BCLK / LRCK | 26 / 25 |
-| I2S DOUT (→ DAC, Mic-In) | 22 |
-| I2S DIN (← ADC, Line-Out) | 4 |
-| Poti 1–5 | 32, 35, 34, 39, 36 |
-| Display/Touch | onboard (ILI9341 + XPT2046) |
-
-GPIO33 ist auf dem CYD **Touch-CS** – nicht als Poti belegen (siehe `include/config.h`).
-
-### Schaltplan (Übersicht)
-
-```mermaid
-flowchart LR
-  subgraph esp32["ESP32 Panel"]
-    TX["GPIO17 TX"]
-    RX["GPIO16 RX"]
-    POT["GPIO32/35/34/39/36\nADC Potis"]
-    GND1["GND"]
-    V33["3V3"]
-  end
-
-  subgraph shifter["Level-Shifter\n3,3 V ↔ 5 V TTL"]
-    A1["Kanal A"]
-    B1["Kanal B"]
-    A2["Kanal A"]
-    B2["Kanal B"]
-    VA["VCCA 3,3 V"]
-    VB["VCCB 5 V"]
-  end
-
-  subgraph radio["ICOM / Yaesu\nCAT / CI-V"]
-    RRX["RX"]
-    RTX["TX"]
-    RGND["GND"]
-    RV5["+5 V Ref."]
-  end
-
-  TX --> A1
-  A1 --> B1
-  B1 --> RRX
-  RTX --> B2
-  B2 --> A2
-  A2 --> RX
-  V33 --> VA
-  RV5 --> VB
-  GND1 --- RGND
-  VA --- RGND
-  VB --- RGND
-  V33 --> POT
-  POT --> GND1
-```
-
-### CAT-Schnittstelle (TTL, kein MAX3232)
-
-Die Firmware nutzt **3,3-V-TTL-UART** (`SERIAL_8N1`). Moderne ICOM- und Yaesu-CAT-Anschlüsse sind **5-V-TTL**, nicht RS-232 (±12 V).
-
-| Schnittstelle | Spannung / Logik | Für dieses Projekt |
-|---------------|------------------|--------------------|
-| ICOM CI-V, Yaesu CAT (typisch) | 5-V-TTL, 8N1 | **Level-Shifter** 3,3 V ↔ 5 V |
-| Echter RS-232 (DE-9, ± Pegel) | RS-232 | **MAX3232** o. Ä. – nur wenn das Funkgerät wirklich RS-232 liefert |
-| USB-CAT-Adapter am PC | USB → TTL im Adapter | Nicht zwischen ESP32 und Funkgerät |
-
-**MAX3232 ist nicht vorgesehen**, solange der CAT-Port des Funkgeräts TTL ist (Standard bei IC-7300, FTdx-Serie, u. a.). Ein MAX3232 würde bei TTL-CAT die Pegel falsch wandeln und die Kommunikation stören.
-
-#### Verdrahtung Level-Shifter (z. B. TXS0108E, 2 Kanäle)
-
-```
-                    Level-Shifter (bidirektional)
-                    ┌─────────────────────────────┐
-  ESP32 3V3 ────────┤ VCCA                        │
-  Funk  +5V ────────┤ VCCB   (Referenz vom Radio │
-  gemeinsam GND ────┤ GND    oder 5V-Regler)    │
-                    │                             │
-  GPIO17 TX ────────┤ A1 ─────────── B1 ─────────┼──► Funk RX
-  GPIO16 RX ◄───────┤ A2 ─────────── B2 ◄────────┼──── Funk TX
-                    └─────────────────────────────┘
-
-  ESP32 GND ─────────────── gemeinsam ───────────── Funk GND
-```
-
-| Signal | ESP32 (3,3 V) | Shifter | Funkgerät (5 V TTL) |
-|--------|---------------|---------|---------------------|
-| Senden | GPIO17 → A1 | B1 → | CAT **RX** |
-| Empfangen | GPIO16 ← A2 | B2 ← | CAT **TX** |
-| Masse | GND | GND | GND |
-
-**Hinweise:**
-
-- TX/RX **kreuzen**: ESP-TX → Funk-RX, ESP-RX ← Funk-TX.
-- Nur **ein** GND zwischen Panel, Shifter und Funkgerät; lange gemeinsame Masseleitung vermeiden.
-- Baudrate in der Web-UI wählen: ICOM meist **19200**, Yaesu meist **38400** (modellabhängig).
-- 3,3-V-TTL-CAT (selten): Shifter optional; Radio-Datenblatt prüfen, ob 3,3 V tolerant ist.
-
-#### RS-232 nur bei Bedarf (Sonderfall)
-
-```
-ESP32 GPIO17/16 ──► MAX3232 TTL-Seite ──► DE-9 RS-232 ──► Funk/Adapter (RS-232)
-```
-
-Nur verwenden, wenn der Hersteller ausdrücklich einen **RS-232**-CAT-Port dokumentiert. Die Firmware bleibt unverändert; nur die Hardware wandelt die Pegel.
-
-### Potentiometer (5×)
-
-```
-        3V3
-         │
-    ┌────┴────┐
-   ╱           ╲
-  │  10 kΩ     │  Poti (Bourns/trimmer o. ä.)
-  │            │
-  └─────┬──────┘
-        │
-        ├────────────► GPIO (ADC, siehe Pin-Tabelle)
-        │
-       GND
-```
-
-| Poti | CYD (`esp32-cyd`) | T-Display (`esp32-tdisplay`) |
-|------|-------------------|------------------------------|
-| 1 | GPIO32 | GPIO32 |
-| 2 | GPIO35 | GPIO33 |
-| 3 | GPIO34 | GPIO25 |
-| 4 | GPIO39 | GPIO26 |
-| 5 | GPIO36 | GPIO34 |
-
-- Widerstandswert **10 kΩ** (typisch), Mittelabgriff an GPIO, Außen an **3,3 V** und **GND**.
-- Nur **3,3 V** am ADC – nie 5 V direkt an GPIO.
-- Entstörung optional: **100 nF** von Mittelabgriff nach GND, nah am Poti.
-
-### Stückliste (Minimum)
-
-| Stück | Wert / Typ | Anzahl | Anmerkung |
-|-------|------------|--------|-----------|
-| ESP32-2432S028 (CYD) oder TTGO T-Display | – | 1 | siehe `platformio.ini` |
-| Level-Shifter | TXS0108E, BSS138-Modul o. ä. | 1 | 2 Kanäle für TX/RX |
-| Potentiometer | 10 kΩ, linear | 5 | |
-| Kabel | abgeschirmt, kurz | – | CAT: TX/RX/GND |
-| Optional | 100 nF Keramik | 5 | ADC-Entstörung |
-
-### Gesamtverdrahtung (CYD)
-
-```
-┌────────────────── ESP32-2432S028 (CYD) ──────────────────┐
-│  USB 5V → Onboard-Regler → 3V3                            │
-│  Display/Touch: onboard                                   │
-│  GPIO32,35,34,39,36 ←── 5× Poti (3V3–Mitte–GND)          │
-│  GPIO17 TX, GPIO16 RX ── Level-Shifter ── Funk CAT       │
-│  GND ───────────────────────────────────── Funk GND      │
-└──────────────────────────────────────────────────────────┘
-```
-
-## Software bauen & flashen
-
-### Web Flasher (empfohlen für Einsteiger)
-
-Firmware **ohne PlatformIO** per USB aus dem Browser installieren ([ESP Web Tools](https://esphome.github.io/esp-web-tools/)):
-
-| Variante | Voraussetzung |
-|----------|----------------|
-| **GitHub Pages** | Repository → Settings → Pages → Source: *GitHub Actions*. Danach: `https://<user>.github.io/<repo>/` (Workflow `Web Flasher`) |
-| **Lokal** | Einmal bauen, dann lokalen Server starten |
-
-```bash
-./scripts/build_flasher_assets.sh   # alle Board-Varianten bauen (~3× Build)
-./scripts/serve_flasher.sh          # http://127.0.0.1:8765/
-```
-
-Im Browser (Chrome / Edge / Firefox, **kein** Safari/iOS):
-
-1. Board wählen (CYD / T-Display / Generic)
-2. **Firmware installieren** → USB-Port wählen
-3. Optional: Standard-`config.json` per LittleFS mitflashen (Checkbox)
-
-Bei Upload-Fehlern: **BOOT** gedrückt halten, **RESET**, BOOT loslassen, erneut flashen.
-
-### PlatformIO (Entwickler)
-
-Voraussetzungen: [PlatformIO](https://platformio.org/)
-
-```bash
-# Python venv einrichten (empfohlen)
-python3 -m venv .venv
-source .venv/bin/activate
-pip install platformio
-
-# CYD-Board (Standard)
-pio run -e esp32-cyd -t upload
-
-# Generisches ILI9341-Board
-pio run -e esp32-generic -t upload
-
-# Filesystem (config.json) hochladen
-pio run -e esp32-cyd -t uploadfs
-
-# Serial Monitor
-pio device monitor
-```
-
-### WSL2 unter Windows
-
-USB-Serial ist in WSL2 **nicht nativ** verfügbar. Das Board erscheint unter Windows als COM-Port (z.B. `COM5`).
-
-```bash
-# Build in WSL, Flash ueber Windows (empfohlen)
-./scripts/flash.sh esp32-tdisplay
-ESP_PORT=COM5 ./scripts/flash.sh esp32-tdisplay
-```
-
-Alternativ: [usbipd-win](https://learn.microsoft.com/en-us/windows/wsl/connect-usb) installieren und USB an WSL durchreichen, dann normal `pio run -t upload`.
-
-### TTGO T-Display v1.1
-
-Environment: `esp32-tdisplay` – ST7789 135x240, zwei Tasten statt Touch.
-
-| Funktion | GPIO |
-|----------|------|
-| CAT RX / TX | 27 / 17 |
-| Poti 1–5 | 32, 33, 25, 26, 34 |
-| Taste +1 kHz | 35 |
-| Taste −1 kHz | 0 (BOOT) |
-
-## Erstinbetriebnahme
-
-1. ESP32 flashen und einschalten
-2. WiFi-AP erscheint: **`ESP32-CAT-Panel`** / Passwort: **`hamradio123`**
-3. Browser öffnen: **http://192.168.4.1**
-4. Hersteller (ICOM/YAESU), CI-V-Adresse, Baudrate und Poti-Mapping konfigurieren
-5. Speichern → Neustart
-
-## Integration mit flrig / Hamlib
-
-### ESP32 als rigctld-Server (PC steuert ESP32/Radio)
-
-Auf dem PC:
-
-```bash
-# Hamlib – direkt zum ESP32
-rigctl -m 2 -r 192.168.4.1:4532 f      # Frequenz lesen
-rigctl -m 2 -r 192.168.4.1:4532 F 14200000  # Frequenz setzen
-```
-
-In **flrig**: Rig → Hamlib → Modell **NET rigctl (2)**, Device: `192.168.x.x:4532`
-
-### PC mit flrig als Server (ESP32 als Client)
-
-1. flrig starten, XML-RPC-Server aktivieren (Port **12345**)
-2. Im Web-UI des ESP32: Remote Host = PC-IP, Port = 12345
-3. Alternativ auf dem PC:
-
-```bash
-rigctld -m 4 -r 192.168.x.x:12345 -t 4532
-```
-
-Dann verbinden andere Programme mit `localhost:4532`.
-
-Referenz: [flrig XML-RPC Server](https://www.w1hkj.org/flrig-help/xmlrpc_server.html)
-
-## Audio über WiFi (optional)
-
-Die **Audio-Bridge** transportiert Funk-Audio bidirektional zum Client:
-
-| Richtung | Hardware | Netz |
-|----------|----------|------|
-| **Empfang** (Funk → Client) | Line-Out / Speaker → I2S-ADC | UDP `:4533` oder WebSocket |
-| **Senden** (Client → Funk) | I2S-DAC → Mic/Line-In | UDP `:4534` oder WebSocket |
-
-### Aktivierung
-
-1. Web-UI: **Audio-Bridge aktiv** ankreuzen, Ports/Sample-Rate prüfen, speichern & neu starten
-2. Oder in `config.json`: `"audio_enabled": true`
-3. I2S-Module verdrahten (siehe unten)
-
-### I2S-Hardware (empfohlen)
-
-| Modul | Funktion | Anschluss Funk |
-|-------|----------|----------------|
-| **ICS-43434** / **INMP441** (I2S-Mic/ADC) | Empfang | Line-Out über **Spannungsteiler** (z. B. 10 kΩ / 22 kΩ auf 3,3 V max.) |
-| **PCM5102** / **MAX98357** (I2S-DAC) | Mikrofon | Mic-In / Line-In über **Koppelkondensator** + Pegelabsenkung |
-
-```
-Funk Line-Out ──[Teiler]──► I2S-ADC DIN (GPIO4)
-Funk Mic-In   ◄──[C + R]── I2S-DAC ◄── DOUT (GPIO22)
-         BCLK GPIO26 · LRCK GPIO25 · GND gemeinsam
-```
-
-> **Sicherheit:** Keine hohen AF- oder DC-Pegel direkt an GPIO legen. Mic/PTT des Funkgeräts nur nach Datenblatt beschalten. Audio-Bridge ersetzt kein sauberes Interface-Box-Design.
-
-### Protokoll (UDP & WebSocket)
-
-Mono **16-bit PCM**, Standard **16 kHz** (konfigurierbar), Frames à **320 Samples** (20 ms).
-
-Paketkopf (Little-Endian):
-
-| Offset | Feld | Typ |
-|--------|------|-----|
-| 0 | Magic `ESPA` | `uint32` = `0x45535041` |
-| 4 | Sequenz | `uint32` |
-| 8 | `nSamples` | `uint16` |
-| 10 | PCM | `nSamples` × `int16` |
-
-| Port | Richtung |
+<p align="center">
+  <img src="docs/assets/logo.svg" width="128" alt="ESP32 CAT Panel Logo">
+</p>
+
+<h1 align="center">ESP32 CAT Remote Panel</h1>
+
+<p align="center">
+  <strong>Funkfernbedienung mit Touch-Display, CAT, WiFi-Audio und FT8</strong><br>
+  ICOM CI-V · Yaesu CAT · Xiegu · flrig · WSJT-X · Hamlib rigctld · rotctld
+</p>
+
+<p align="center">
+  <a href="docs/GUIDE_DE.md">📖 Vollständiger Leitfaden</a> ·
+  <a href="hardware/esp32-flrig-shield/README.md">🛠️ PCB / JLCPCB</a> ·
+  <a href="docs/RADIOS.md">📻 Funkgeräte</a> ·
+  <a href="flasher/index.html">⚡ Web Flasher</a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-ESP32-blue?style=flat-square" alt="ESP32">
+  <img src="https://img.shields.io/badge/CAT-CI--V%20%7C%20Yaesu-green?style=flat-square" alt="CAT">
+  <img src="https://img.shields.io/badge/Audio-48%20kHz%20I2S-orange?style=flat-square" alt="Audio">
+  <img src="https://img.shields.io/badge/FT8-WSJT--X-purple?style=flat-square" alt="FT8">
+  <img src="https://img.shields.io/badge/Rotor-rotctld%204535-yellow?style=flat-square" alt="Rotor">
+  <img src="https://img.shields.io/badge/PCB-KiCad%207-00979D?style=flat-square" alt="KiCad">
+</p>
+
+---
+
+## Was ist das?
+
+Ein **ESP32-Panel** (z. B. Cheap Yellow Display) steuert dein Funkgerät **direkt per CAT** und optional **Audio über WiFi** — ideal für **FT8/WSJT-X** am PC ohne USB-Kabel zum Funk.
+
+<p align="center">
+  <img src="hardware/esp32-flrig-shield/assets/block_diagram.svg" width="720" alt="Systemübersicht">
+</p>
+
+| Pfad | Funktion |
 |------|----------|
-| **4533** (out) | ESP → Client (Radio-Empfang) |
-| **4534** (in) | Client → ESP (Mikro zum Funk) |
+| **CAT** | [rigctld](https://hamlib.sourceforge.net/html/rigctld.1.html) **4532** — flrig, WSJT-X (`rigctl -m 2`) |
+| **Rotor** | [rotctld](https://hamlib.sourceforge.net/html/rotctld.1.html) **4535** — `rotctl -m 2`, 2× Taster, 2× OC-Relais |
+| **Audio** | UDP **4533** / **4534** oder WebSocket `/ws/audio` @ 48 kHz |
+| **Panel** | 5× Potis, Touch-UI, Web-Konfiguration |
 
-Der ESP merkt sich die Client-IP nach dem ersten Paket auf Port **4534** und sendet Empfangsaudio an dieselbe IP auf Port **4533**.
+---
 
-### Client-Nutzung
+## Unterstützte Funkgeräte
 
-**Browser** (Web Audio, kein Extra-Tool):
+| Hersteller | Modelle |
+|------------|---------|
+| **Xiegu** | G90, X6100, X6200 |
+| **Yaesu** | FT-991A, FT-910, FT-DX10, FT-DX101D/MP, FT-891, FT-897, FT-857 |
+| Referenz | ICOM IC-7300 |
 
-```
-http://<ESP32-IP>/audio
-```
+Profil in der Web-UI wählen → **Baudrate & Protokoll automatisch**. Details: **[docs/RADIOS.md](docs/RADIOS.md)**
 
-**Python-UDP-Client** (PC mit Lautsprecher/Mikro):
+---
+
+## Schnellstart
+
+### 1 · Firmware
 
 ```bash
-pip install sounddevice numpy
-python3 scripts/audio_client.py 192.168.4.1
-# Ports anpassen: --port-out 4533 --port-in 4534
+pio run -e esp32-cyd -t upload
+pio run -e esp32-cyd -t uploadfs   # Web-UI / config.json
 ```
 
-**WebSocket** (gleiches PCM-Format, binär): `ws://<ESP32-IP>/ws/audio`
+Oder **[Web Flasher](flasher/index.html)** im Browser.
 
-### Hinweise
+### 2 · Verbinden
 
-- Audio und CAT laufen parallel; für SSB reicht meist 16 kHz Mono.
-- Latenz hängt von WiFi und Client-Puffer ab (typisch 50–150 ms).
-- Ohne I2S-Hardware die Bridge deaktiviert lassen (`audio_enabled: false`).
+| Modus | SSID / IP | Konfiguration |
+|-------|-----------|---------------|
+| AP (Werk) | `ESP32-CAT-Panel` / `192.168.4.1` | http://192.168.4.1/ |
+| WLAN | DHCP | Funkprofil unter **Funkgerät** wählen |
 
-## Potentiometer – frei programmierbar
+### 3 · CAT testen
 
-Jeder der 5 Potis kann über Web-UI oder `/config.json` konfiguriert werden:
-
-| Aktion | Wirkung |
-|--------|---------|
-| `FREQ_COARSE` | Grobe Frequenzänderung (± kHz) |
-| `FREQ_FINE` | Feine Frequenzänderung (± Hz) |
-| `AF_GAIN` | AF-Lautstärke (0.0–1.0) |
-| `RF_POWER` | Sendeleistung |
-| `RF_GAIN` | RF-Gain / AGC |
-| `SQUELCH` | Squelch |
-| `MIC_GAIN` | Mikrofonverstärkung |
-| `RIT_OFFSET` | RIT-Offset |
-| `CUSTOM_RIGCTL` | Eigener Befehl mit `{val}`-Platzhalter |
-
-Beispiel `config.json`:
-
-```json
-{
-  "pots": [
-    {"action": "FREQ_COARSE", "min": -100000, "max": 100000, "step": 10000},
-    {"action": "FREQ_FINE",   "min": -5000,   "max": 5000,   "step": 10},
-    {"action": "AF_GAIN",     "min": 0.0,     "max": 1.0,    "step": 0.01},
-    {"action": "RF_POWER",    "min": 0.0,     "max": 1.0,    "step": 0.01},
-    {"action": "SQUELCH",     "min": 0.0,     "max": 1.0,    "step": 0.01}
-  ]
-}
+```bash
+rigctl -m 2 -r 192.168.4.1:4532 f
+rigctl -m 2 -r 192.168.4.1:4532 m USB
 ```
 
-## Unterstützte CAT-Befehle (rigctld)
+### 4 · Rotor (Hamlib rotctld)
 
-| Befehl | Funktion |
-|--------|----------|
-| `f` / `F` | Frequenz lesen/setzen |
-| `m` / `M` | Modus lesen/setzen |
-| `t` / `T` | PTT lesen/setzen |
-| `l` / `L` | Level lesen/setzen (AF, RFPOWER) |
-| `w` | Raw CI-V/CAT (Hex) |
-| `\get_info` | Geräteinfo |
+Der ESP32 fungiert als **rotctld**-Server ([Hamlib-Dokumentation](https://hamlib.sourceforge.net/html/rotctld.1.html)). Am **GPIO** hängen zwei **Taster** (links/rechts) und zwei **Open-Collector-Ausgänge** für Relais (NPN + Freilaufdiode extern).
 
-## Touch-Display UI
+```bash
+rotctl -m 2 -r 192.168.4.1:4535 p          # Azimut / Elevierung lesen
+rotctl -m 2 -r 192.168.4.1:4535 M 8 50    # links, Speed 50
+rotctl -m 2 -r 192.168.4.1:4535 M 16 50   # rechts
+rotctl -m 2 -r 192.168.4.1:4535 S          # Stop
+```
 
-- Frequenzanzeige (MHz)
-- Modus (USB/LSB/CW/…)
-- RX/TX-Status
-- Tasten: +1 kHz / −1 kHz
+| Richtung (Hamlib `M`) | Wert | GPIO OC (CYD) |
+|----------------------|------|----------------|
+| Links (CCW) | 8 | GPIO **18** |
+| Rechts (CW) | 16 | GPIO **19** |
+| Taster CCW / CW | — | GPIO **27** / **5** |
 
-## ICOM CI-V Adressen (Beispiele)
+**Open Collector:** `OUTPUT_OPEN_DRAIN` — **LOW** = Relais ein, **HIGH** = aus. Gemeinsame Masse ESP32 ↔ Relais ↔ Netzteil.
 
-| Radio | Adresse (hex) |
-|-------|---------------|
-| IC-7300 | 0x94 |
-| IC-705 | 0xA4 |
-| IC-7610 | 0x98 |
+**Elevation:** wird nur gespeichert/abgefragt (`P`/`p`), nicht über Relais angesteuert (reine Azimut-OC-Schaltung).
 
-## Yaesu CAT
+Ports in der Web-UI unter **Rotor (Hamlib rotctld)** einstellbar. Standard-**rotctld-Port 4535** (nicht 4533 — der ist Audio-UDP).
 
-Standard-ASCII-Befehle (`FA`, `MD`, `PC`, `AG`, `SQ`, `TX`). Baudrate meist **38400** (je nach Modell auch 4800 oder 9600).
+### 5 · FT8 / WSJT-X
+
+```bash
+pip install -r scripts/requirements-ft8.txt
+cp scripts/ft8_config.example.json ~/.config/esp32-flrig/ft8.json
+# IP + radio_model anpassen
+
+python3 scripts/ft8_setup.py --config ~/.config/esp32-flrig/ft8.json --test-cat --start
+```
+
+| OS | Setup-Skript |
+|----|----------------|
+| **Linux** | `./scripts/ft8_setup.sh 192.168.4.1 --pa --start` |
+| **Windows** | `.\scripts\ft8_windows_setup.ps1 -EspHost 192.168.4.1 -InstallVbCable -StartBridge` |
+
+---
+
+## Interface-Platine (RJ45 + JLCPCB)
+
+Eine **2-Layer-PCB** bündelt Pegelwandler, I2S-Audio und **einen RJ45** für Strom, CAT und Line-Audio zum Funk.
+
+<p align="center">
+  <img src="hardware/esp32-flrig-shield/assets/block_diagram.svg" width="640" alt="Shield Blockdiagramm">
+</p>
+
+| Dokument | Inhalt |
+|----------|--------|
+| [hardware/esp32-flrig-shield/README.md](hardware/esp32-flrig-shield/README.md) | Übersicht |
+| [Bauanleitung](hardware/esp32-flrig-shield/docs/ASSEMBLY.md) | Löten & Inbetriebnahme |
+| [Schaltplan](hardware/esp32-flrig-shield/docs/SCHEMATIC.md) | Netze & Blöcke |
+| [RJ45 Pinout](hardware/esp32-flrig-shield/docs/RJ45_PINOUT.md) | Kabelbelegung ESP32-FLRIG-1 |
+| [JLCPCB](hardware/esp32-flrig-shield/docs/JLCPCB_ORDER.md) | Gerber & Bestellung |
+
+**Fertige Gerber:** [`hardware/esp32-flrig-shield/fabrication/esp32-flrig-shield-jlc.zip`](hardware/esp32-flrig-shield/fabrication/esp32-flrig-shield-jlc.zip) — direkt bei JLCPCB hochladen.
+
+```bash
+cd hardware/esp32-flrig-shield/kicad && ./export_gerbers.sh   # bei Änderungen neu erzeugen
+```
+
+> **Rev A:** KiCad-Projekt mit Footprints, GND-Plane und Basis-Routing. Vor Bestellung **DRC** und ggf. Leiterbahnen vervollständigen.
+
+---
+
+## Hardware (Übersicht)
+
+**Empfohlen:** ESP32-2432S028 (CYD)
+
+| Signal | GPIO (CYD) |
+|--------|------------|
+| CAT RX / TX | 16 / 17 |
+| I2S BCLK / LRCK | 26 / 25 |
+| I2S DOUT / DIN | 22 / 4 |
+| Potis 1–5 | 32, 35, 34, 39, 36 |
+| Rotor Taster CCW / CW | 27 / 5 |
+| Rotor OC CCW / CW | 18 / 19 |
+
+CAT: **3,3 V TTL** + **TXS0102** zum Funk (5 V). Kein MAX3232 bei TTL-CAT.
+
+### Rotor — Anschluss OC + Taster
+
+```
+                    ESP32 GPIO (Open Drain)
+                    ┌─────────────────────────┐
+  Taster CCW ───────┤ GPIO27 (INPUT_PULLUP)   │
+  Taster CW  ───────┤ GPIO5                   │
+                    │ GPIO18 OC ──┬──► NPN ──► Relais Azimut CCW
+                    │ GPIO19 OC ──┴──► NPN ──► Relais Azimut CW
+                    └─────────────────────────┘
+                           GND gemeinsam
+```
+
+Beispiel NPN (z. B. 2N2222 / BC547): Basis über **1 kΩ** vom GPIO, Emitter **GND**, Kollektor → Relais-Spule → **+12 V** (oder Rotor-Hilfsspannung), **Freilaufdiode** antiparallel zur Spule.
+
+Ausführlich: **[docs/GUIDE_DE.md](docs/GUIDE_DE.md)** (Schaltpläne, AliExpress, Audio-Pegel, Mermaid).
+
+---
 
 ## Projektstruktur
 
 ```
-├── flasher/                # Web Flasher (index.html + firmware/)
+esp32-flrig/
+├── docs/
+│   ├── GUIDE_DE.md          # Ausführliche Dokumentation (DE)
+│   ├── RADIOS.md            # Funkprofile
+│   └── assets/logo.svg
+├── hardware/esp32-flrig-shield/
+│   ├── kicad/               # KiCad → JLCPCB
+│   ├── fabrication/         # BOM, CPL
+│   └── docs/                # Bauanleitung, RJ45
 ├── scripts/
-│   ├── build_flasher_assets.sh
-│   ├── serve_flasher.sh
-│   └── flash.sh
-├── platformio.ini          # Build-Konfiguration
-├── include/                # Header
-│   ├── config.h            # Pins, Enums
-│   ├── icom_civ.h          # ICOM CI-V
-│   ├── yaesu_cat.h         # Yaesu CAT
-│   ├── cat_controller.h    # Unified CAT API
-│   ├── rigctld_server.h    # Hamlib TCP server
-│   ├── audio_bridge.h      # I2S ↔ UDP/WebSocket audio
-│   ├── pot_manager.h       # Potentiometer logic
-│   └── touch_ui.h          # LVGL UI
-├── src/                    # Implementierung
-└── data/config.json        # Default-Konfiguration
+│   ├── ft8_setup.py         # FT8 Setup (Linux/Win)
+│   ├── ft8_setup.sh         # Linux Wrapper
+│   ├── ft8_windows_setup.ps1
+│   ├── ft8_remote.py
+│   └── ft8_config.example.json
+├── src/
+│   ├── hamlib_tcp_server.cpp  # rigctld + rotctld TCP
+│   ├── rotor_controller.cpp
+│   └── rotctld_server.cpp
+├── include/  data/
+└── flasher/
 ```
 
-## Lizenz
+---
 
-GPL-2.0 (kompatibel mit flrig/Hamlib-Ökosystem)
+## Architektur
 
-## Weiterführende Links
+```
+┌─────────────┐  rigctld :4532   ┌──────────────┐  CAT UART    ┌─────────┐
+│ WSJT-X/flrig│◄────────────────►│ ESP32 Panel  │◄────────────►│ Funk    │
+└─────────────┘                  │ rotctld :4535│              └─────────┘
+┌─────────────┐  rotctl          │ GPIO Taster  │──► Relais Azimut
+│ gpredict /  │◄────────────────►│ GPIO OC      │
+│ rotctl      │                  │ Audio :4533  │
+└─────────────┘                  └──────────────┘
+       ▲                                ▲
+       └── ft8_remote.py (UDP) ─────────┘
+```
 
-- [flrig auf GitHub](https://github.com/w1hkj/flrig)
-- [Hamlib rigctld Manual](https://hamlib.sourceforge.net/html/rigctld.1.html)
-- [flrig XML-RPC Hilfe](https://www.w1hkj.org/flrig-help/xmlrpc_server.html)
+---
+
+## Hamlib — unterstützte Befehle
+
+### rigctld (Port 4532)
+
+Frequenz, Modus, PTT, Level, Split-Stubs für WSJT-X — siehe [rigctld.1](https://hamlib.sourceforge.net/html/rigctld.1.html) und [docs/GUIDE_DE.md](docs/GUIDE_DE.md).
+
+### rotctld (Port 4535)
+
+| Befehl | Funktion |
+|--------|----------|
+| `p` / `get_pos` | Azimut + Elevierung (Zeilenwerte + `RPRT 0`) |
+| `P a e` / `set_pos` | Position setzen, Relais aus |
+| `M dir speed` | Bewegen (8=links, 16=rechts; 2/4 für Up/Down reserviert) |
+| `S` / `stop` | Stop, beide OC aus |
+| `K` / `park` | wie Stop |
+| `_` / `get_info` | Geräteinfo |
+
+Protokoll wie [rotctld.1](https://hamlib.sourceforge.net/html/rotctld.1.html): eine Zeile pro Kommando, Antwort mit `RPRT 0` bei Erfolg.
+
+---
+
+## Links
+
+| Thema | Referenz |
+|-------|----------|
+| Hamlib rigctld | https://hamlib.sourceforge.net/html/rigctld.1.html |
+| Hamlib rotctld | https://hamlib.sourceforge.net/html/rotctld.1.html |
+| Ausführlicher Leitfaden | [docs/GUIDE_DE.md](docs/GUIDE_DE.md) |
+| FT8 Windows | `scripts/ft8_windows_setup.ps1` |
+| FT8 Linux PA | `scripts/ft8_linux_pa.sh` |
+| Audio-Monitor | http://\<ESP-IP\>/audio |
+
+---
+
+<p align="center">
+  <sub>Lizenz: siehe Repository · Beiträge willkommen</sub>
+</p>

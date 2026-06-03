@@ -1,14 +1,13 @@
 #include "config_store.h"
+#include "radio_profiles.h"
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
 const char* ConfigStore::PATH = "/config.json";
 
 void ConfigStore::setDefaults(AppConfig& cfg) {
-    cfg.vendor = RadioVendor::ICOM;
+    radioProfileApply(cfg, "IC-7300");
     cfg.connMode = ConnectionMode::DIRECT_CAT;
-    cfg.icomAddress = 0x94;
-    cfg.catBaud = CAT_DEFAULT_BAUD;
     cfg.wifiSsid[0] = '\0';
     cfg.wifiPass[0] = '\0';
     cfg.remoteHost[0] = '\0';
@@ -16,7 +15,15 @@ void ConfigStore::setDefaults(AppConfig& cfg) {
     cfg.audioEnabled = false;
     cfg.audioPortOut = AUDIO_PORT_OUT;
     cfg.audioPortIn = AUDIO_PORT_IN;
-    cfg.audioSampleRate = AUDIO_SAMPLE_RATE;
+    cfg.audioSampleRate = AUDIO_SAMPLE_RATE;  // 48 kHz für FT8 / WSJT-X
+    cfg.rotorEnabled = true;
+    cfg.rotorBtnCcw = ROTOR_BTN_CCW_DEFAULT;
+    cfg.rotorBtnCw = ROTOR_BTN_CW_DEFAULT;
+    cfg.rotorOcCcw = ROTOR_OC_CCW_DEFAULT;
+    cfg.rotorOcCw = ROTOR_OC_CW_DEFAULT;
+    cfg.rotctldPort = ROTCTLD_PORT;
+    cfg.rotorSpeed = ROTOR_SPEED_DEFAULT;
+    cfg.rotorDebounceMs = ROTOR_DEBOUNCE_MS_DEFAULT;
 
     auto setPot = [](PotConfig& p, PotAction action, float minV, float maxV, float step) {
         p.action = action;
@@ -87,11 +94,22 @@ bool ConfigStore::load(AppConfig& cfg) {
     }
     f.close();
 
-    const char* vendor = doc["vendor"] | "ICOM";
-    cfg.vendor = (strcmp(vendor, "YAESU") == 0) ? RadioVendor::YAESU : RadioVendor::ICOM;
-
-    cfg.icomAddress = doc["icom_address"] | 0x94;
-    cfg.catBaud = doc["cat_baud"] | CAT_DEFAULT_BAUD;
+    const char* model = doc["radio_model"] | "";
+    if (model[0]) {
+        strlcpy(cfg.radioModel, model, sizeof(cfg.radioModel));
+        radioProfileApply(cfg, cfg.radioModel);
+    } else {
+        const char* vendor = doc["vendor"] | "ICOM";
+        cfg.vendor = (strcmp(vendor, "YAESU") == 0) ? RadioVendor::YAESU : RadioVendor::ICOM;
+        cfg.icomAddress = doc["icom_address"] | 0x94;
+        cfg.catBaud = doc["cat_baud"] | CAT_DEFAULT_BAUD;
+        cfg.radioModel[0] = '\0';
+    }
+    if (doc["cat_baud"].is<uint32_t>()) cfg.catBaud = doc["cat_baud"];
+    if (doc["icom_address"].is<uint32_t>()) cfg.icomAddress = doc["icom_address"];
+    const char* vendor = doc["vendor"] | nullptr;
+    if (vendor)
+        cfg.vendor = (strcmp(vendor, "YAESU") == 0) ? RadioVendor::YAESU : RadioVendor::ICOM;
 
     strlcpy(cfg.wifiSsid, doc["wifi_ssid"] | "", sizeof(cfg.wifiSsid));
     strlcpy(cfg.wifiPass, doc["wifi_pass"] | "", sizeof(cfg.wifiPass));
@@ -101,6 +119,14 @@ bool ConfigStore::load(AppConfig& cfg) {
     cfg.audioPortOut = doc["audio_port_out"] | AUDIO_PORT_OUT;
     cfg.audioPortIn = doc["audio_port_in"] | AUDIO_PORT_IN;
     cfg.audioSampleRate = doc["audio_sample_rate"] | AUDIO_SAMPLE_RATE;
+    cfg.rotorEnabled = doc["rotor_enabled"] | true;
+    cfg.rotorBtnCcw = doc["rotor_btn_ccw"] | ROTOR_BTN_CCW_DEFAULT;
+    cfg.rotorBtnCw = doc["rotor_btn_cw"] | ROTOR_BTN_CW_DEFAULT;
+    cfg.rotorOcCcw = doc["rotor_oc_ccw"] | ROTOR_OC_CCW_DEFAULT;
+    cfg.rotorOcCw = doc["rotor_oc_cw"] | ROTOR_OC_CW_DEFAULT;
+    cfg.rotctldPort = doc["rotctld_port"] | ROTCTLD_PORT;
+    cfg.rotorSpeed = doc["rotor_speed"] | ROTOR_SPEED_DEFAULT;
+    cfg.rotorDebounceMs = doc["rotor_debounce_ms"] | ROTOR_DEBOUNCE_MS_DEFAULT;
 
     JsonArray pots = doc["pots"].as<JsonArray>();
     for (size_t i = 0; i < POT_COUNT && i < pots.size(); i++) {
@@ -117,6 +143,7 @@ bool ConfigStore::load(AppConfig& cfg) {
 
 bool ConfigStore::save(const AppConfig& cfg) {
     JsonDocument doc;
+    doc["radio_model"] = cfg.radioModel;
     doc["vendor"] = (cfg.vendor == RadioVendor::YAESU) ? "YAESU" : "ICOM";
     doc["icom_address"] = cfg.icomAddress;
     doc["cat_baud"] = cfg.catBaud;
@@ -128,6 +155,14 @@ bool ConfigStore::save(const AppConfig& cfg) {
     doc["audio_port_out"] = cfg.audioPortOut;
     doc["audio_port_in"] = cfg.audioPortIn;
     doc["audio_sample_rate"] = cfg.audioSampleRate;
+    doc["rotor_enabled"] = cfg.rotorEnabled;
+    doc["rotor_btn_ccw"] = cfg.rotorBtnCcw;
+    doc["rotor_btn_cw"] = cfg.rotorBtnCw;
+    doc["rotor_oc_ccw"] = cfg.rotorOcCcw;
+    doc["rotor_oc_cw"] = cfg.rotorOcCw;
+    doc["rotctld_port"] = cfg.rotctldPort;
+    doc["rotor_speed"] = cfg.rotorSpeed;
+    doc["rotor_debounce_ms"] = cfg.rotorDebounceMs;
 
     JsonArray pots = doc["pots"].to<JsonArray>();
     for (int i = 0; i < POT_COUNT; i++) {

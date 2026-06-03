@@ -1,0 +1,16 @@
+Comment,Designator,Footprint,Quantity,Value,LCSC Part #
+Level shifter 2-bit bidirectional, U1,Package_SO:SOIC-8_3.9x4.9mm_P1.27mm,1,TXS0102DCUR,C15029
+3.3V LDO 1A, U2,Package_TO_SOT_SMD:SOT-223-3_TabPin2,1,AMS1117-3.3,C6186
+I2S DAC module, U3,PCM5102_Module_6pin,1,PCM5102,DNP_HAND
+I2S mic module, U4,INMP441_Module_6pin,1,INMP441,DNP_HAND
+RJ45 8P8C shielded, J1,RJ45_Amphenol_RJHSE5080,1,RJ45,C124375
+Header 2x10 2.54mm, J2,PinHeader_2x10_P2.54mm_Vertical,1,Conn_2x10,DNP_HAND
+PTC 500mA, F1,Fuse_1206_3216Metric,1,500mA,C13685
+Schottky OR-ing, D1,D_SMA,1,SS34,C8678
+100nF decoupling, C1 C2 C3 C4 C5 C6 C7 C8,Capacitor_0805_2012Metric,8,100nF,C496
+10uF 0805, C9 C10,Capacitor_0805_2012Metric,2,10uF,C15850
+10uF bulk 5V/3V3, C11 C12,Capacitor_1206_3216Metric,2,10uF,C15850
+10uF audio coupling, C13 C14,CP_Radial_D5.0mm_P2.50mm,2,10uF,DNP_HAND
+10k divider AF in, R1 R2,Resistor_0805_2012Metric,2,10k,C25744
+1k series AF out, R3,Resistor_0805_2012Metric,1,1k,C11702
+10k I2S pull-down, R4 R5,Resistor_0805_2012Metric,2,10k,C25744

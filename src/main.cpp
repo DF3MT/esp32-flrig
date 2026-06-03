@@ -4,6 +4,8 @@
 #include "config_store.h"
 #include "cat_controller.h"
 #include "rigctld_server.h"
+#include "rotctld_server.h"
+#include "rotor_controller.h"
 #include "pot_manager.h"
 #include "touch_ui.h"
 #include "web_config.h"
@@ -13,6 +15,8 @@ static AppConfig      g_cfg;
 static ConfigStore    g_store;
 static CatController  g_cat;
 static RigctldServer  g_rigctld;
+static HamlibTcpServer g_rotctld;
+static RotorController g_rotor;
 static PotManager     g_pots;
 static TouchUI        g_ui;
 static WebConfig      g_web;
@@ -72,9 +76,15 @@ void setup() {
     g_cat.onStateChange(onStateChange);
 
     // rigctld server – flrig/hamlib can connect here
-    g_rigctld.begin(RIGCTLD_PORT);
+    g_rigctld.begin(RIGCTLD_PORT, "rigctld");
     g_rigctld.setHandler([](const String& cmd) -> String {
-        return dispatchRigctl(cmd, g_cat, g_cat.state());
+        return dispatchRigctl(cmd, g_cat, g_cat.state(), &g_cfg);
+    });
+
+    g_rotor.begin(g_cfg);
+    g_rotctld.begin(g_cfg.rotctldPort, "rotctld");
+    g_rotctld.setHandler([](const String& cmd) -> String {
+        return dispatchRotctl(cmd, g_rotor, &g_cfg);
     });
 
     g_pots.begin(g_cfg.pots);
@@ -87,8 +97,12 @@ void setup() {
     g_web.begin(&g_cfg, onConfigSaved);
     g_audio.begin(&g_cfg);
 
-    Serial.printf("[rigctld] flrig/hamlib: rigctl -m 2 -r %s:%d\n",
+    Serial.printf("[rigctld] rigctl -m 2 -r %s:%d\n",
                   WiFi.localIP().toString().c_str(), RIGCTLD_PORT);
+    if (g_cfg.rotorEnabled) {
+        Serial.printf("[rotctld] rotctl -m 2 -r %s:%d\n",
+                      WiFi.localIP().toString().c_str(), g_cfg.rotctldPort);
+    }
     Serial.println("[web] config UI: http://" + WiFi.localIP().toString());
     if (g_cfg.audioEnabled) {
         Serial.println("[audio] monitor: http://" + WiFi.localIP().toString() + "/audio");
@@ -97,6 +111,8 @@ void setup() {
 
 void loop() {
     g_rigctld.loop();
+    g_rotctld.loop();
+    g_rotor.loop();
     g_cat.poll();
     g_pots.loop(g_cat, g_cat.state());
     g_ui.loop();
