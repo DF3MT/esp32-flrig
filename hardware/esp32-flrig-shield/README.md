@@ -1,4 +1,4 @@
-# ESP32-FLRIG Interface Shield (PCB Rev C)
+# ESP32-FLRIG Interface Shield (PCB Rev D, 78×50 mm)
 
 <p align="center">
   <a href="#deutsch">🇩🇪 Deutsch</a> ·
@@ -21,7 +21,7 @@
 
 ### Übersicht
 
-Shield für **[ESP32-S3](https://www.espressif.com/en/products/socs/esp32-s3)** ([USB-Host](https://de.wikipedia.org/wiki/USB)) oder optional **[CYD](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display)** (nur Funk **Kanal A**):
+**78×50 mm**, **2-layer** — Shield für **[ESP32-S3](https://www.espressif.com/en/products/socs/esp32-s3)** ([USB-Host](https://de.wikipedia.org/wiki/USB)) oder optional **[CYD](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display)** (nur Funk **Kanal A**). Stecker an der **Vorderkante** (USB + RJ45), **CYD links**, **S3/Rotor hinten**: [PCB_LAYOUT.md](docs/PCB_LAYOUT.md).
 
 | Anschluss | Funktion |
 |-----------|----------|
@@ -104,7 +104,7 @@ esp32-flrig-shield/
 
 ### Overview
 
-Shield for **[ESP32-S3](https://www.espressif.com/en/products/socs/esp32-s3)** ([USB host](https://en.wikipedia.org/wiki/USB)) or optionally **[CYD](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display)** (radio **channel A** only):
+**78×50 mm**, **2-layer** — shield for **[ESP32-S3](https://www.espressif.com/en/products/socs/esp32-s3)** ([USB host](https://en.wikipedia.org/wiki/USB)) or optionally **[CYD](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display)** (radio **channel A** only). Connectors on the **front edge** (USB + RJ45), **CYD on the left**, **S3/rotor on the back**: [PCB_LAYOUT.md](docs/PCB_LAYOUT.md).
 
 | Connector | Function |
 |-----------|----------|

@@ -1,6 +1,6 @@
 # Bestellung bei [JLCPCB](https://jlcpcb.com/)
 
-**[PCB](https://de.wikipedia.org/wiki/Leiterplatte) Revision:** **C** (100×72 mm) — [RJ45](https://de.wikipedia.org/wiki/RJ-45) + **2× [USB-A](https://de.wikipedia.org/wiki/USB)** + **galvanische Trennung** ([ISO7741](https://www.ti.com/product/ISO7741), [ADuM4160](https://www.analog.com/en/products/adum4160.html)×2, [Audio-Trafos](https://de.wikipedia.org/wiki/Transformator))
+**[PCB](https://de.wikipedia.org/wiki/Leiterplatte) Revision:** **D** (**78×50 mm**, 2-layer) — [RJ45](https://de.wikipedia.org/wiki/RJ-45) + **2× [USB-A](https://de.wikipedia.org/wiki/USB)** · Layout: [PCB_LAYOUT.md](PCB_LAYOUT.md)
 
 ## 1. Fertige [Gerber](https://en.wikipedia.org/wiki/Gerber_format) (sofort bei [JLCPCB](https://jlcpcb.com/) hochladen)
 
@@ -25,8 +25,10 @@ Einzeldateien: `fabrication/gerbers/`
 ```bash
 cd hardware/esp32-flrig-shield/kicad
 ./export_gerbers.sh
-# oder: python3 generate_gerbers.py --zip --preview
+# oder: python3 generate_gerbers.py --validate --zip --preview
 ```
+
+**Prüfung vor Upload:** `python3 generate_gerbers.py --validate` (Kupfer, Mask-Öffnungen, 4× Edge.Cuts-Linien, Bohrungen, Platinenmaß).
 
 **Vorschau (JPG):** [`../fabrication/esp32-flrig-shield-preview.jpg`](../fabrication/esp32-flrig-shield-preview.jpg) — alle [Gerber](https://en.wikipedia.org/wiki/Gerber_format)-Layer (Kupfer, Mask, Paste, Silk, Bohrungen).
 

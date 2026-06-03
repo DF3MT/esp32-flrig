@@ -31,6 +31,7 @@ PCB = ROOT / "esp32-flrig-shield.kicad_pcb"
 OUT = ROOT.parent / "fabrication" / "gerbers"
 BOARD = "esp32-flrig-shield"
 MASK_GROW = 0.05  # mm solder mask expansion
+EDGE_WIDTH = 0.15  # mm Edge.Cuts line width (KiCad gr_rect stroke)
 
 
 def rotate_xy(x: float, y: float, deg: float) -> tuple[float, float]:
@@ -90,6 +91,17 @@ def add_pad_copper(g: GerberFile, fp, pad, layer_filter: str) -> None:
         )
 
 
+def add_edge_rectangle(edge: GerberFile, x1: float, y1: float, x2: float, y2: float) -> None:
+    """Closed board outline as Edge.Cuts strokes (JLCPCB / gerbonara outline_svg_d)."""
+    xa, xb = min(x1, x2), max(x1, x2)
+    ya, yb = min(y1, y2), max(y1, y2)
+    ap = CircleAperture(EDGE_WIDTH, unit=MM)
+    edge.objects.append(Line(xa, ya, xb, ya, ap, unit=MM))
+    edge.objects.append(Line(xb, ya, xb, yb, ap, unit=MM))
+    edge.objects.append(Line(xb, yb, xa, yb, ap, unit=MM))
+    edge.objects.append(Line(xa, yb, xa, ya, ap, unit=MM))
+
+
 def add_pad_mask(g: GerberFile, fp, pad) -> None:
     layers = pad.layers or []
     if not any("Cu" in ly for ly in layers):
@@ -121,22 +133,22 @@ def build_stack() -> LayerStack:
     edge = GerberFile(generator_hints=["kicad", "esp32-flrig"])
     drill = ExcellonFile(generator_hints=["kicad", "esp32-flrig"])
 
-    # Board outline (segments + gr_rect from raw — KiCad often uses gr_rect only)
+    # Board outline — strokes only (filled Edge.Cuts breaks preview + outline_svg_d)
+    edge_rect: tuple[float, float, float, float] | None = None
     for item in board.graphicItems:
         if getattr(item, "layer", None) == "Edge.Cuts" and hasattr(item, "start"):
             x1, y1 = item.start.X, item.start.Y
             x2, y2 = item.end.X, item.end.Y
-            edge.objects.append(
-                Region.from_rectangle(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1), unit=MM)
-            )
+            add_edge_rectangle(edge, x1, y1, x2, y2)
+            edge_rect = (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
     for m in re.finditer(
         r'\(gr_rect \(start ([\d.]+) ([\d.]+)\) \(end ([\d.]+) ([\d.]+)\)[^)]*\(layer "Edge.Cuts"',
         raw,
     ):
         x1, y1, x2, y2 = map(float, m.groups())
-        edge.objects.append(
-            Region.from_rectangle(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1), unit=MM)
-        )
+        if edge_rect is None:
+            add_edge_rectangle(edge, x1, y1, x2, y2)
+            edge_rect = (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
 
     # Tracks
     for m in re.finditer(
@@ -212,15 +224,57 @@ def build_stack() -> LayerStack:
     return stack
 
 
+def validate_stack(stack: LayerStack) -> list[str]:
+    """Sanity checks before JLCPCB upload."""
+    issues: list[str] = []
+    layers = stack.graphic_layers
+    cu = len(layers.get(("top", "copper"), GerberFile()).objects)
+    mask = len(layers.get(("top", "mask"), GerberFile()).objects)
+    silk = len(layers.get(("top", "silk"), GerberFile()).objects)
+    paste = len(layers.get(("top", "paste"), GerberFile()).objects)
+    outline = len(layers.get(("mechanical", "outline"), GerberFile()).objects)
+    drills = len(stack.drill_pth.objects) if stack.drill_pth else 0
+
+    if cu < 10:
+        issues.append(f"top copper has only {cu} objects (expected pours + tracks + pads)")
+    if mask < 10:
+        issues.append(f"top mask has only {mask} openings (expected all pads)")
+    if outline < 4:
+        issues.append(f"outline has {outline} objects (expected 4 Edge.Cuts lines)")
+    if drills < 10:
+        issues.append(f"PTH drill has only {drills} hits")
+    if not stack.outline_svg_d(unit=MM):
+        issues.append("outline_svg_d empty — Edge.Cuts must be lines/arcs, not filled regions")
+
+    bb = stack.board_bounds(MM, default=None)
+    if bb:
+        w = bb[1][0] - bb[0][0]
+        h = bb[1][1] - bb[0][1]
+        if not (70 <= w <= 85 and 45 <= h <= 55):
+            issues.append(f"board size {w:.1f}×{h:.1f} mm unexpected (target ~78×50 compact)")
+    return issues
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--zip", action="store_true", help="Create JLCPCB upload ZIP")
     ap.add_argument("--preview", action="store_true", help="Render JPG/SVG preview (render_pcb_preview.py)")
+    ap.add_argument("--validate", action="store_true", help="Run Gerber sanity checks and exit non-zero on failure")
     ap.add_argument("-o", "--output", type=Path, default=OUT)
     args = ap.parse_args()
 
     args.output.mkdir(parents=True, exist_ok=True)
     stack = build_stack()
+    issues = validate_stack(stack)
+    if issues:
+        print("Validation warnings:")
+        for msg in issues:
+            print(f"  - {msg}")
+    else:
+        print("Gerber stack validation: OK")
+    if args.validate and issues:
+        sys.exit(1)
+
     settings = FileSettings.defaults()
     stack.save_to_directory(
         args.output,
@@ -249,7 +303,7 @@ Layers included (KiCad naming):
 PCB: 2 layer, 1.6 mm, HASL or ENIG
 SMT assembly: only SMT parts in BOM — hand-solder THT (U3,U4,J2,J3,J5,J6,J7)
 
-Rev C PCB: 100x72 mm — galvanic isolation (ISO7741, ADuM4160 x2, audio transformers)
+Rev D PCB: 78x50 mm, 2-layer — compact layout (see docs/PCB_LAYOUT.md)
 Separate nets: GND_ESP, GND_RADIO_A, GND_USB_B, GND_USB_C — see docs/ISOLATION.md
 
 Generated by: kicad/generate_gerbers.py
@@ -257,8 +311,8 @@ Generated by: kicad/generate_gerbers.py
         encoding="utf-8",
     )
 
-    files = sorted(args.output.glob(f"{BOARD}*")) + sorted(args.output.glob("*.gbr")) + sorted(
-        args.output.glob("*.drl")
+    files = sorted(
+        {f for f in args.output.iterdir() if f.is_file() and f.suffix in (".gbr", ".drl", ".txt")}
     )
     print(f"Exported {len(files)} files to {args.output}")
     for f in files:

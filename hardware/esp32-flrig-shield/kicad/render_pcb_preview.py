@@ -2,13 +2,16 @@
 """
 Render PCB preview image (SVG + JPG) from Gerber export or KiCad PCB.
 
-Uses gerbonara ``to_svg()`` with solid layer colors (no SVG filter effects).
-``to_pretty_svg()`` looks nicer in Inkscape but renders blank in CairoSVG/browsers
-because filter stacks are not supported for rasterization.
+Preview stack (bottom → top), filter-free for CairoSVG/browsers:
+  1. Copper (pours, tracks, pads)
+  2. Green solder mask over the board outline
+  3. Mask openings re-drawn in copper (exposed pads)
+  4. Paste, silk, drills
+  5. Board edge stroke (not a filled yellow rectangle)
 
 Usage:
   python3 render_pcb_preview.py
-  python3 render_pcb_preview.py --width 3200
+  python3 render_pcb_preview.py --width 3600 --copy-docs
   python3 render_pcb_preview.py --from-gerbers ../fabrication/gerbers
 """
 from __future__ import annotations
@@ -27,28 +30,13 @@ DEFAULT_JPG = FAB / "esp32-flrig-shield-preview.jpg"
 DEFAULT_SVG = FAB / "esp32-flrig-shield-preview.svg"
 DOCS_JPG = ROOT.parent.parent.parent / "docs" / "assets" / "pcb-preview.jpg"
 
-# Bottom → top draw order (first = back)
-DRAW_ORDER: list[tuple[str, str]] = [
-    ("top", "copper"),
-    ("top", "mask"),
-    ("top", "paste"),
-    ("top", "silk"),
-    ("bottom", "copper"),
-    ("mechanical", "outline"),
-]
-
-# Solid fills — must use explicit keys (defaultdict.get skips missing keys in gerbonara)
-PREVIEW_COLORS: dict[str, str] = {
-    "top copper": "#C87533",
-    "top mask": "#1A5C1A",
-    "top paste": "#888888",
-    "top silk": "#E8E8E8",
-    "bottom copper": "#C87533",
-    "mechanical outline": "#D4A017",
-    "drill pth": "#252525",
-    "drill npth": "#505050",
-    "drill unknown": "#303030",
-}
+COLOR_COPPER = "#C87533"
+COLOR_MASK = "#1A5C1A"
+COLOR_PASTE = "#888888"
+COLOR_SILK = "#E8E8E8"
+COLOR_EDGE = "#D4A017"
+COLOR_DRILL = "#252525"
+EDGE_STROKE_MM = 0.2
 
 
 def load_stack(from_gerbers: Path | None) -> LayerStack:
@@ -60,62 +48,108 @@ def load_stack(from_gerbers: Path | None) -> LayerStack:
     return build_stack()
 
 
+def _board_bounds(stack: LayerStack) -> tuple[float, float, float, float]:
+    bb = stack.board_bounds(MM)
+    if bb:
+        return bb[0][0], bb[0][1], bb[1][0], bb[1][1]
+    bb = stack.bounding_box(MM, default=((5, 5), (105, 72)))
+    return bb[0][0], bb[0][1], bb[1][0], bb[1][1]
+
+
+def _rect_path(x1: float, y1: float, x2: float, y2: float) -> str:
+    return f"M {x1} {y1} L {x2} {y1} L {x2} {y2} L {x1} {y2} Z"
+
+
+def _layer_group(stack: LayerStack, key: tuple[str, str], fg: str, transform: str) -> Tag | None:
+    if key not in stack.graphic_layers:
+        return None
+    layer = stack.graphic_layers[key]
+    objs = list(layer.svg_objects(svg_unit=MM, fg=fg, bg="white", tag=Tag))
+    if not objs:
+        return None
+    return Tag(
+        "g",
+        objs,
+        id=f"l-{'-'.join(key)}",
+        transform=transform,
+        stroke_linejoin="round",
+        stroke_linecap="round",
+    )
+
+
 def write_flat_svg(stack: LayerStack, path: Path, margin: float = 3) -> None:
-    """Filter-free SVG suitable for browsers, CairoSVG, and README embeds."""
     bounds = stack.bounding_box(MM, default=((0, 0), (0, 0)))
-    stroke_attrs = {"stroke_linejoin": "round", "stroke_linecap": "round"}
+    x1, y1, x2, y2 = _board_bounds(stack)
     layer_transform = f"translate(0 {bounds[0][1] + bounds[1][1]}) scale(1 -1)"
+    board_path = _rect_path(x1, y1, x2, y2)
 
     tags: list[Tag] = []
-    for side, use in DRAW_ORDER:
-        key = (side, use)
-        if key not in stack.graphic_layers:
-            continue
-        color = PREVIEW_COLORS.get(f"{side} {use}")
-        if not color:
-            continue
-        layer = stack.graphic_layers[key]
-        tags.append(
-            Tag(
-                "g",
-                list(layer.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
-                id=f"l-{side}-{use}",
-                transform=layer_transform,
-                **stroke_attrs,
-            )
-        )
 
-    if stack.drill_pth and (color := PREVIEW_COLORS.get("drill pth")):
+    # 1 — copper (includes GND pour; mostly hidden by mask next)
+    if g := _layer_group(stack, ("top", "copper"), COLOR_COPPER, layer_transform):
+        tags.append(g)
+
+    # 2 — solder mask over entire board
+    tags.append(
+        Tag(
+            "path",
+            [],
+            id="l-soldermask-fill",
+            d=board_path,
+            fill=COLOR_MASK,
+            stroke="none",
+            transform=layer_transform,
+        )
+    )
+
+    # 3 — mask openings (Gerber = clearances) shown as copper pads
+    if ("top", "mask") in stack.graphic_layers:
+        mask = stack.graphic_layers[("top", "mask")]
+        openings = list(mask.svg_objects(svg_unit=MM, fg=COLOR_COPPER, bg="white", tag=Tag))
+        if openings:
+            tags.append(
+                Tag(
+                    "g",
+                    openings,
+                    id="l-mask-openings",
+                    transform=layer_transform,
+                    stroke_linejoin="round",
+                    stroke_linecap="round",
+                )
+            )
+
+    # 4 — paste & silk
+    if g := _layer_group(stack, ("top", "paste"), COLOR_PASTE, layer_transform):
+        tags.append(g)
+    if g := _layer_group(stack, ("top", "silk"), COLOR_SILK, layer_transform):
+        tags.append(g)
+
+    # 5 — drills
+    if stack.drill_pth and (color := COLOR_DRILL):
         tags.append(
             Tag(
                 "g",
                 list(stack.drill_pth.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
                 id="l-drill-pth",
                 transform=layer_transform,
-                **stroke_attrs,
+                stroke_linejoin="round",
+                stroke_linecap="round",
             )
         )
-    if stack.drill_npth and (color := PREVIEW_COLORS.get("drill npth")):
-        tags.append(
-            Tag(
-                "g",
-                list(stack.drill_npth.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
-                id="l-drill-npth",
-                transform=layer_transform,
-                **stroke_attrs,
-            )
+
+    # 6 — board edge (stroke only — never fill outline layer)
+    tags.append(
+        Tag(
+            "path",
+            [],
+            id="l-board-edge",
+            d=board_path,
+            fill="none",
+            stroke=COLOR_EDGE,
+            stroke_width=EDGE_STROKE_MM,
+            transform=layer_transform,
         )
-    for i, layer in enumerate(stack._drill_layers):
-        if color := PREVIEW_COLORS.get("drill unknown"):
-            tags.append(
-                Tag(
-                    "g",
-                    list(layer.svg_objects(svg_unit=MM, fg=color, bg="white", tag=Tag)),
-                    id=f"l-drill-{i}",
-                    transform=layer_transform,
-                    **stroke_attrs,
-                )
-            )
+    )
 
     svg = setup_svg(
         tags,
@@ -124,7 +158,7 @@ def write_flat_svg(stack: LayerStack, path: Path, margin: float = 3) -> None:
         arg_unit=MM,
         svg_unit=MM,
         tag=Tag,
-        pagecolor="#f4f4f4",
+        pagecolor="#e8e8e8",
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     if hasattr(svg, "write_to"):
